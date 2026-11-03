@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Albarán a CSV Pro | Extractor Especializado Saltoki & Aquafer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=3.3">
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="brand">
+        <div class="brand-icon">📑</div>
+        <div>
+          <h1>Albarán a CSV Pro <span class="version-tag">Modelos Saltoki & Aquafer</span></h1>
+          <p>Extracción de alta precisión, traducción de portugués a español, resaltado directo y exportación individual o en lote</p>
+        </div>
+      </div>
+      <div class="header-badges">
+        <span class="badge success" id="statusBadge">● Motor OCR & Estilos Excel Activos</span>
+        <span class="badge">100% Local y Seguro</span>
+      </div>
+    </header>
+
+    <!-- Metrics Cards -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-icon">📄</div>
+        <div class="metric-content">
+          <div class="metric-value" id="statDocs">0</div>
+          <div class="metric-label">Documentos Cargados</div>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon" style="color: #38bdf8;">🏢</div>
+        <div class="metric-content">
+          <div class="metric-value" id="statSaltoki">0</div>
+          <div class="metric-label">Albaranes Saltoki</div>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon" style="color: #34d399;">🚛</div>
+        <div class="metric-content">
+          <div class="metric-value" id="statAquafer">0</div>
+          <div class="metric-label">Aquafer / CMR (Traducidos)</div>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon" style="color: #fbbf24;">📦</div>
+        <div class="metric-content">
+          <div class="metric-value" id="statOrders">0</div>
+          <div class="metric-label">Total Pedidos Detectados</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dropzone Area -->
+    <div class="dropzone-card" id="dropzone" onclick="document.getElementById('fileInput').click()">
+      <input type="file" id="fileInput" accept=".pdf,application/pdf" multiple style="display: none;">
+      <div class="dropzone-content">
+        <div class="dropzone-icon">📥</div>
+        <div class="dropzone-title">Arrastra aquí los albaranes de Saltoki o Aquafer</div>
+        <div class="dropzone-desc">
+          Detecta automáticamente el formato (<b>Saltoki</b> o <b>Aquafer/CMR</b>), traduce del portugués al español, resalta directamente en amarillo los campos destacados y extrae todos los pedidos de cada albarán.
+        </div>
+        <div class="dropzone-actions" onclick="event.stopPropagation()">
+          <button type="button" class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+            📂 Seleccionar Archivos PDF
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="loadSamplePdfs()">
+            🧪 Cargar Muestras Reales (Saltoki + Aquafer)
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress Indicator -->
+    <div class="progress-container" id="progressContainer">
+      <div class="progress-header">
+        <span id="progressText">Procesando documentos con máxima fidelidad...</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progressBar"></div>
+      </div>
+    </div>
+
+    <!-- Main Controls Bar -->
+    <div class="controls-card">
+      <div class="controls-left">
+        <div class="tabs-group">
+          <button type="button" class="tab-btn active" id="tabSplit" onclick="setViewMode('SPLIT')">
+            📂 Tablas Separadas (Saltoki / Aquafer)
+          </button>
+          <button type="button" class="tab-btn" id="tabSaltokiOnly" onclick="setViewMode('SALTOKI')">
+            🏢 Solo Saltoki (<span id="countSaltoki">0</span>)
+          </button>
+          <button type="button" class="tab-btn" id="tabAquaferOnly" onclick="setViewMode('AQUAFER')">
+            🚛 Solo Aquafer (<span id="countAquafer">0</span>)
+          </button>
+          <button type="button" class="tab-btn" id="tabAllOnly" onclick="setViewMode('TODOS')">
+            📑 Todos Unificados (<span id="countAll">0</span>)
+          </button>
+        </div>
+
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="🔍 Buscar por albarán, pedido, cliente, ciudad..." oninput="filterTables()">
+        </div>
+      </div>
+
+      <div class="controls-right">
+        <label class="toggle-control" title="Si un PDF tiene varios pedidos, genera 1 fila independiente por cada pedido">
+          <input type="checkbox" id="splitOrdersToggle" onchange="toggleSplitOrders()">
+          <span>🔀 Desglosar filas por pedido</span>
+        </label>
+
+        <button type="button" class="btn btn-success" onclick="exportMasterWorkbook()" title="Descargar libro Excel profesional completo con detalle de productos y pedidos, colores y anchos adaptados">
+          📊 Descargar Todo en Excel Completo (.xlsx)
+        </button>
+
+        <button type="button" class="btn btn-danger-outline btn-sm" onclick="clearAll()" title="Vaciar todos los albaranes">
+          🗑️ Limpiar
+        </button>
+      </div>
+    </div>
+
+    <!-- Leyenda Informativa -->
+    <div class="legend-bar">
+      <span class="legend-item"><span class="highlight-sample"></span> <b>Campos en amarillo pastel</b> = Subrayados/resaltados en el albarán original</span>
+      <span class="legend-item"><span class="badge success" style="font-size:0.72rem; padding: 2px 7px;">🌐 Traducido</span> = Traducido de portugués a español</span>
+      <span class="legend-item">🏢 <b>Formato Excel Completo:</b> Abre directamente en el <b>Detalle Completo</b> con todos los artículos, cantidades, códigos y pedidos con diseño corporativo y columnas ampliadas.</span>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- SECCIÓN 1: TABLA DEDICADA SALTOKI                        -->
+    <!-- ======================================================== -->
+    <div class="results-card section-card" id="sectionSaltoki">
+      <div class="table-card-header header-saltoki">
+        <div class="section-title">
+          <span class="company-badge badge-saltoki">🏢 SALTOKI</span>
+          <h3>Albaranes Formato Saltoki Logística</h3>
+          <span class="badge" id="saltokiCountBadge">0 documentos</span>
+        </div>
+        <div class="table-card-actions">
+          <button type="button" class="btn btn-primary btn-sm" onclick="exportTable('SALTOKI', 'xlsx')" title="Excel profesional: Detalle completo de productos, pedidos y cantidades">
+            📊 Descargar Excel Completo (.xlsx)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="exportTable('SALTOKI', 'csv', 'resumen')" title="CSV limpio: 1 fila por albarán sin repeticiones">
+            📥 CSV Resumen (.csv)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="exportTable('SALTOKI', 'csv', 'detalle')" title="CSV detallado con cada línea de producto">
+            📥 CSV Detalle (.csv)
+          </button>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table id="tableSaltoki">
+          <thead>
+            <tr>
+              <th style="width: 44px; text-align: center;">
+                <input type="checkbox" class="select-all-checkbox" onchange="toggleSelectAll('SALTOKI', this.checked)" title="Seleccionar todos los de Saltoki">
+              </th>
+              <th style="width: 90px; text-align: center;">Acciones</th>
+              <th style="min-width: 170px;">Archivo PDF</th>
+              <th style="min-width: 140px;">Nº Albarán SF</th>
+              <th style="min-width: 140px;">Nº Pedido Cliente</th>
+              <th style="min-width: 110px;">Fecha Albarán</th>
+              <th style="min-width: 110px;">Fecha Pedido</th>
+              <th style="min-width: 250px;">Lugar Entrega / Descarga</th>
+              <th style="min-width: 150px;">Población / CP</th>
+              <th style="min-width: 200px;">Cliente / Razón Social</th>
+              <th style="min-width: 220px;">Dirección Fiscal Logístico</th>
+              <th style="min-width: 110px;">CIF Cliente</th>
+              <th style="min-width: 180px;">Proveedor Remitente</th>
+              <th style="min-width: 220px;">Mercancía / Bultos</th>
+            </tr>
+          </thead>
+          <tbody id="bodySaltoki">
+            <!-- Filas dinámicas de Saltoki -->
+          </tbody>
+        </table>
+        <div class="empty-state" id="emptySaltoki" style="display: none;">
+          <p>No hay albaranes de Saltoki cargados.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- SECCIÓN 2: TABLA DEDICADA AQUAFER (CMR)                  -->
+    <!-- ======================================================== -->
+    <div class="results-card section-card" id="sectionAquafer">
+      <div class="table-card-header header-aquafer">
+        <div class="section-title">
+          <span class="company-badge badge-aquafer">🚛 AQUAFER</span>
+          <h3>Guías de Remesa & CMR Internacional (Traducidos al Español)</h3>
+          <span class="badge" id="aquaferCountBadge">0 documentos</span>
+        </div>
+        <div class="table-card-actions">
+          <button type="button" class="btn btn-aquafer btn-sm" onclick="exportTable('AQUAFER', 'xlsx')" title="Excel profesional: Detalle completo de productos, pedidos y cantidades">
+            📊 Descargar Excel Completo (.xlsx)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="exportTable('AQUAFER', 'csv', 'resumen')" title="CSV limpio: 1 fila por albarán sin repeticiones">
+            📥 CSV Resumen (.csv)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="exportTable('AQUAFER', 'csv', 'detalle')" title="CSV detallado con cada línea de producto">
+            📥 CSV Detalle (.csv)
+          </button>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table id="tableAquafer">
+          <thead>
+            <tr>
+              <th style="width: 44px; text-align: center;">
+                <input type="checkbox" class="select-all-checkbox" onchange="toggleSelectAll('AQUAFER', this.checked)" title="Seleccionar todos los de Aquafer">
+              </th>
+              <th style="width: 90px; text-align: center;">Acciones</th>
+              <th style="min-width: 170px;">Archivo PDF</th>
+              <th style="min-width: 150px;">Nº Guía Remesa (GREM)</th>
+              <th style="min-width: 120px;">Nº Carta de Porte (CMR)</th>
+              <th style="min-width: 150px;">Nº Pedidos Cliente</th>
+              <th style="min-width: 250px;">Lugar de Descarga (Entrega)</th>
+              <th style="min-width: 150px;">Población / CP</th>
+              <th style="min-width: 220px;">Lugar de Carga (Origen)</th>
+              <th style="min-width: 200px;">Cliente Destinatario</th>
+              <th style="min-width: 220px;">Dirección Destinatario</th>
+              <th style="min-width: 110px;">NIF Destinatario</th>
+              <th style="min-width: 200px;">Proveedor Remitente</th>
+              <th style="min-width: 120px;">Fecha Emisión Albarán</th>
+              <th style="min-width: 110px;">Fecha Vencimiento</th>
+              <th style="min-width: 140px;">Fecha Expedición CMR</th>
+              <th style="min-width: 180px;">Transportista</th>
+              <th style="min-width: 200px;">Notas Especiales Entrega (Español)</th>
+              <th style="min-width: 220px;">Mercancía Resumen</th>
+            </tr>
+          </thead>
+          <tbody id="bodyAquafer">
+            <!-- Filas dinámicas de Aquafer -->
+          </tbody>
+        </table>
+        <div class="empty-state" id="emptyAquafer" style="display: none;">
+          <p>No hay albaranes de Aquafer cargados.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- SECCIÓN 3: TABLA UNIFICADA (GENERAL)                     -->
+    <!-- ======================================================== -->
+    <div class="results-card section-card" id="sectionAll" style="display: none;">
+      <div class="table-card-header">
+        <div class="section-title">
+          <span class="company-badge" style="background: rgba(148, 163, 184, 0.2); color: #cbd5e1;">📑 GENERAL</span>
+          <h3>Todos los Albaranes Unificados</h3>
+          <span class="badge" id="allCountBadge">0 documentos</span>
+        </div>
+        <div class="table-card-actions">
+          <button type="button" class="btn btn-success btn-sm" onclick="exportTable('TODOS', 'xlsx')" title="Excel profesional: Detalle completo de productos, pedidos y cantidades">
+            📊 Descargar Excel Completo (.xlsx)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="exportTable('TODOS', 'csv', 'resumen')" title="CSV limpio: 1 fila por albarán sin repeticiones">
+            📥 CSV Resumen (.csv)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="exportTable('TODOS', 'csv', 'detalle')" title="CSV detallado por líneas de productos">
+            📥 CSV Detalle (.csv)
+          </button>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table id="tableAll">
+          <thead>
+            <tr>
+              <th style="width: 44px; text-align: center;">
+                <input type="checkbox" class="select-all-checkbox" onchange="toggleSelectAll('TODOS', this.checked)">
+              </th>
+              <th style="width: 90px; text-align: center;">Acciones</th>
+              <th style="min-width: 170px;">Archivo PDF</th>
+              <th style="min-width: 100px;">Modelo</th>
+              <th style="min-width: 140px;">Nº Albarán / Guía</th>
+              <th style="min-width: 110px;">Nº CMR</th>
+              <th style="min-width: 140px;">Nº Pedido(s)</th>
+              <th style="min-width: 240px;">Lugar de Descarga / Entrega</th>
+              <th style="min-width: 140px;">Población / CP</th>
+              <th style="min-width: 180px;">Cliente Destinatario</th>
+              <th style="min-width: 180px;">Dirección Fiscal</th>
+              <th style="min-width: 100px;">CIF / NIF</th>
+              <th style="min-width: 170px;">Proveedor Remitente</th>
+              <th style="min-width: 110px;">Fecha Albarán</th>
+              <th style="min-width: 110px;">Fecha Pedido</th>
+              <th style="min-width: 150px;">Transportista</th>
+              <th style="min-width: 180px;">Notas Entrega</th>
+              <th style="min-width: 200px;">Mercancía Resumen</th>
+            </tr>
+          </thead>
+          <tbody id="bodyAll">
+            <!-- Filas dinámicas generales -->
+          </tbody>
+        </table>
+        <div class="empty-state" id="emptyAll" style="display: none;">
+          <p>No hay albaranes cargados todavía.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty State Global -->
+    <div class="results-card" id="emptyStateGlobal">
+      <div class="empty-state">
+        <div class="empty-state-icon">📄</div>
+        <p style="font-size: 1.05rem; font-weight: 600; color: #f8fafc;">No hay albaranes cargados todavía</p>
+        <p style="font-size: 0.86rem; color: #94a3b8; max-width: 520px; text-align: center;">
+          Arrastra aquí uno o varios PDFs, o pulsa en <b>«Cargar Muestras Reales»</b> para ver cómo se dividen automáticamente entre <b>Saltoki</b> y <b>Aquafer</b> con sus formatos respectivos.
+        </p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+      <p>💡 Cada albarán descargado lleva su nombre individual único (ej: <code>Albaran_SALTOKI_SF-20260625_Pedido_SF-227018.xlsx</code>). En Excel, los apartados van en negrita con sus colores y los campos subrayados en amarillo.</p>
+    </footer>
+  </div>
+
+  <!-- PDF Preview & Edit Modal -->
+  <div class="modal-overlay" id="pdfModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <h3 id="modalFilename">Visualizador de Albarán</h3>
+          <span style="font-size: 0.75rem; color: var(--text-muted);" id="modalDocType">Documento</span>
+        </div>
+        <button class="icon-btn" onclick="closePdfModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="pdf-viewer-pane">
+          <canvas id="pdfCanvas"></canvas>
+        </div>
+        <div class="extracted-pane">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h4 style="font-size: 0.95rem; color: var(--primary);">Campos Extraídos (Editables)</h4>
+            <span class="badge" id="modalModeloBadge">Modelo</span>
+          </div>
+          
+          <div class="form-row">
+            <div class="extracted-field">
+              <label>Tipo Documento</label>
+              <input type="text" id="modalFieldTipo">
+            </div>
+            <div class="extracted-field">
+              <label>Nº Albarán / Guía</label>
+              <input type="text" id="modalFieldDocumento">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="extracted-field">
+              <label>Nº CMR (Si aplica)</label>
+              <input type="text" id="modalFieldCmr">
+            </div>
+            <div class="extracted-field">
+              <label>Nº Pedidos Cliente (Varios posibles)</label>
+              <input type="text" id="modalFieldPedidos">
+            </div>
+          </div>
+
+          <div class="extracted-field">
+            <label>Lugar de Descarga / Entrega</label>
+            <textarea id="modalFieldDescarga"></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="extracted-field">
+              <label>Población / CP Descarga</label>
+              <input type="text" id="modalFieldPoblacion">
+            </div>
+            <div class="extracted-field">
+              <label>CIF / NIF Cliente</label>
+              <input type="text" id="modalFieldCif">
+            </div>
+          </div>
+
+          <div class="extracted-field">
+            <label>Cliente / Razón Social</label>
+            <input type="text" id="modalFieldCliente">
+          </div>
+
+          <div class="extracted-field">
+            <label>Dirección Fiscal / Logístico</label>
+            <textarea id="modalFieldLogistico"></textarea>
+          </div>
+
+          <div class="extracted-field">
+            <label>Proveedor / Remitente</label>
+            <input type="text" id="modalFieldProveedor">
+          </div>
+
+          <div class="form-row">
+            <div class="extracted-field">
+              <label>Fecha Albarán</label>
+              <input type="text" id="modalFieldFechaAlbaran">
+            </div>
+            <div class="extracted-field">
+              <label>Fecha Pedido</label>
+              <input type="text" id="modalFieldFechaPedido">
+            </div>
+            <div class="extracted-field">
+              <label>Fecha Vencimiento</label>
+              <input type="text" id="modalFieldFechaVencimiento">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="extracted-field">
+              <label>Transportista</label>
+              <input type="text" id="modalFieldTransportista">
+            </div>
+            <div class="extracted-field">
+              <label>Instrucciones de Entrega (en Español)</label>
+              <input type="text" id="modalFieldNotas">
+            </div>
+          </div>
+
+          <div class="extracted-field">
+            <label>Mercancía / Bultos Resumen</label>
+            <input type="text" id="modalFieldMercancia">
+          </div>
+
+          <!-- Tabla de productos y cantidades en el modal -->
+          <div class="modal-products-section">
+            <h5 style="font-size: 0.85rem; color: #38bdf8; margin-top: 10px; margin-bottom: 6px; display: flex; justify-content: space-between;">
+              <span>📦 Líneas de Artículos y Cantidades</span>
+              <span id="modalProductsCount" class="badge" style="font-size: 0.7rem; padding: 2px 6px;">0 artículos</span>
+            </h5>
+            <div class="modal-products-table-wrapper">
+              <table class="modal-products-table">
+                <thead>
+                  <tr>
+                    <th>Pedido</th>
+                    <th>Código Art.</th>
+                    <th>Descripción Producto</th>
+                    <th style="text-align: right;">Cantidad</th>
+                  </tr>
+                </thead>
+                <tbody id="modalProductsBody">
+                  <!-- Filas dinámicas de productos -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style="margin-top: auto; display: flex; gap: 8px; padding-top: 10px;">
+            <button class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="closePdfModal()">
+              💾 Guardar Cambios y Cerrar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast">
+    <span id="toastMessage">Acción realizada</span>
+  </div>
+
+  <!-- Scripts -->
+  <script src="lib/pdf.min.js"></script>
+  <script src="lib/xlsx.full.min.js"></script>
+  <script src="app.js?v=3.3"></script>
+</body>
+</html>
