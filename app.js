@@ -618,25 +618,6 @@ async function extractDataClientSide(file) {
     data.total_lineas = 15;
     data.mercancia_resumen = '103 depósitos acumuladores (15 líneas / 15 bultos) / 103 kg';
   } else {
-      { linea: 3, pedido: '473036', codigo_articulo: '2310351158', descripcion: 'ACUMULADOR 444 DPI/DI/BC 500 AQ mod: DII 0500 VSQ P', cantidad: 7, cantidad_str: '7', unidad: 'Unidades' },
-      { linea: 4, pedido: '473036', codigo_articulo: '2310351152', descripcion: 'ACUMULADOR 444bPl/Dl/BC 80 AQ mod: DII 0080 VSQ P', cantidad: 8, cantidad_str: '8', unidad: 'Unidades' },
-      { linea: 5, pedido: '473036', codigo_articulo: '2310365058', descripcion: 'INTERACUMULADOR INOX 316 DPI/I/ES 500L AQ mod: TAQ 0500 VS IPL PN8', cantidad: 2, cantidad_str: '2', unidad: 'Unidades' },
-      { linea: 6, pedido: '473318', codigo_articulo: '2310351150', descripcion: 'ACUMULADOR 444 DPI/DI/BC 25 AQ mod: DII 0025 VSQ P', cantidad: 3, cantidad_str: '3', unidad: 'Unidades' },
-      { linea: 7, pedido: '473318', codigo_articulo: '2310351151', descripcion: 'ACUMULADOR 444 DPI/DI/BC 60 AQ mod: DII 0060 VSQ P', cantidad: 10, cantidad_str: '10', unidad: 'Unidades' },
-      { linea: 8, pedido: '473318', codigo_articulo: '2310351152', descripcion: 'ACUMULADOR 444 DPI/DI/BC 80 AQ mod: DII 0080 VSQ P', cantidad: 7, cantidad_str: '7', unidad: 'Unidades' },
-      { linea: 9, pedido: '473318', codigo_articulo: '2310351153', descripcion: 'ACUMULADOR 444 DPI/DI/BC 100 AQ mod: DII 0100 VSQ P', cantidad: 12, cantidad_str: '12', unidad: 'Unidades' },
-      { linea: 10, pedido: '473318', codigo_articulo: '2310351154', descripcion: 'ACUMULADOR 444 DPI/DI/BC 150 AQ mod: 0150 VSQ P', cantidad: 4, cantidad_str: '4', unidad: 'Unidades' },
-      { linea: 11, pedido: '473318', codigo_articulo: '2310351155', descripcion: 'ACUMULADOR 444 DPI/DI/BC 200 AQ mod: DII 0200 VSQ P', cantidad: 4, cantidad_str: '4', unidad: 'Unidades' },
-      { linea: 12, pedido: '473318', codigo_articulo: '2310351156', descripcion: 'ACUMULADOR DPI/DI/BC 300 AQ mod: DII 0300 VSQ P', cantidad: 2, cantidad_str: '2', unidad: 'Unidades' },
-      { linea: 13, pedido: '473318', codigo_articulo: '2310351158', descripcion: 'ACUMULADOR DPI/Di/BC 500 AQ mod: 0500 VSQ P', cantidad: 1, cantidad_str: '1', unidad: 'Unidades' },
-      { linea: 14, pedido: '473318', codigo_articulo: '2310365055', descripcion: 'INTERACUMULADOR INOX 316 DPI/I/ES 200L AQ mod: TAQ 0200 VS IPP PN8', cantidad: 1, cantidad_str: '1', unidad: 'Unidades' },
-      { linea: 15, pedido: '473318', codigo_articulo: '2310365058', descripcion: 'INTERACUMULADOR INOX 316 DPI/I/ES 500L AQ mod: TAQ 0500 VS IPL PN8', cantidad: 2, cantidad_str: '2', unidad: 'Unidades' }
-    ];
-    data.lineas_productos = prodsA;
-    data.total_unidades = 103;
-    data.total_lineas = 15;
-    data.mercancia_resumen = '103 depósitos acumuladores (15 líneas / 15 bultos) / 103 kg';
-  } else {
     const mSf = fullText.match(/\b(SF\s*\d{6,10}|SF-\d{6,10})\b/);
     if (mSf) {
       data.numero_documento = cleanStr(mSf[1]);
