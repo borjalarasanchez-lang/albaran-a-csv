@@ -154,7 +154,7 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
 
                 items = payload.get("items", [])
                 modelo = payload.get("modelo", "TODOS")
-                tipo = payload.get("tipo", "resumen")
+                tipo = payload.get("tipo", "detalle")
                 filename = payload.get("filename", "albaranes.csv")
 
                 if not filename.lower().endswith(".csv"):

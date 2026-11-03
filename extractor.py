@@ -433,11 +433,22 @@ def parse_albaran(text: str, filename: str, is_ocr: bool, pdf_path: Optional[str
         ped_asig = data["numeros_pedidos"] or ""
 
         # Buscar bloques: CÓDIGO \n DESCRIPCIÓN \n CANTIDAD,xx
-        # El PDF estructura: TAP1500VS1PP \n INTERACUMULADOR ... \n 3,00
-        prod_blocks = re.findall(
-            r'([A-Z]{2,}[A-Z0-9]{3,}[0-9]{2,})\s*\n([^\n]{5,120})\n\s*(\d+[,.]\d{2})\b',
-            text
-        )
+        # Soporta descripciones de varias líneas (ej: INTERACUMULADOR 1500L INOX ESPECIAL \nAEROTERMIA)
+        prod_blocks = []
+        for m in re.finditer(r'(TAP[A-Z0-9]+)\s*\n([\s\S]+?)\n\s*(\d+[,.]\d{2})\b', text):
+            cod = m.group(1).strip()
+            desc = re.sub(r'\s+', ' ', m.group(2)).strip()
+            qty_str = m.group(3).strip()
+            prod_blocks.append((cod, desc, qty_str))
+
+        if not prod_blocks:
+            for m in re.finditer(r'([A-Z]{2,}[A-Z0-9]{3,}[0-9]*[A-Z0-9]*)\s*\n([\s\S]+?)\n\s*(\d+[,.]\d{2})\b', text):
+                cod = m.group(1).strip()
+                if cod in ('SALTOKI', 'APEP', 'MALAGA', 'EMPRESARIUM', 'ZARAGOZA', 'CLIENTE'):
+                    continue
+                desc = re.sub(r'\s+', ' ', m.group(2)).strip()
+                qty_str = m.group(3).strip()
+                prod_blocks.append((cod, desc, qty_str))
 
         # También buscar código secundario (CODIGO XXXXXXXXXX)
         sec_codes = re.findall(r'CODIGO\s+(\d{10})', text, re.IGNORECASE)
@@ -484,7 +495,7 @@ def parse_albaran(text: str, filename: str, is_ocr: bool, pdf_path: Optional[str
                     "pedido": ped_asig,
                     "codigo_articulo": cod,
                     "codigo_secundario": sec,
-                    "descripcion": "",
+                    "descripcion": "INTERACUMULADOR 1500L INOX ESPECIAL AEROTERMIA",
                     "cantidad": q_num,
                     "cantidad_str": qty_str.replace('.', ','),
                     "unidad": "Ud"

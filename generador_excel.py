@@ -365,11 +365,11 @@ def generar_excel_bytes(items: List[Dict[str, Any]], modelo: str = "TODOS") -> b
   return output.getvalue()
 
 
-def generar_csv_texto(items: List[Dict[str, Any]], modelo: str = "TODOS", tipo: str = "resumen") -> str:
+def generar_csv_texto(items: List[Dict[str, Any]], modelo: str = "TODOS", tipo: str = "detalle") -> str:
   """
   Genera texto CSV limpio con punto y coma (;).
-  - tipo='resumen' (por defecto): Genera 1 fila limpia por albarán (sin repetición de datos, igual que en pantalla).
-  - tipo='detalle': Desglosa cada producto en una fila individual.
+  - tipo='detalle' (por defecto): Desglosa cada producto en una fila individual con código, descripción, cantidad y unidad.
+  - tipo='resumen': Genera 1 fila limpia por albarán (sin repetición de datos, igual que en pantalla).
   """
   if tipo == "detalle":
     rows_data = _expand_items_to_lines(items)

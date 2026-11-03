@@ -1179,10 +1179,42 @@ function toggleSelectAll(model, isChecked) {
   renderTables();
 }
 
+// Helper para expandir albaranes a líneas individuales de productos
+function expandItemsToProductLines(items) {
+  const expanded = [];
+  items.forEach(item => {
+    const lines = item.lineas_productos || [];
+    if (lines.length > 0) {
+      lines.forEach((l, idx) => {
+        const row = Object.assign({}, item);
+        row.prod_pedido = l.pedido || item.numeros_pedidos || '';
+        row.prod_linea = l.linea || (idx + 1);
+        row.prod_codigo = l.codigo_articulo || '-';
+        row.prod_codigo_sec = l.codigo_secundario || '-';
+        row.prod_descripcion = l.descripcion || item.mercancia_resumen || 'Artículo';
+        row.prod_cantidad = l.cantidad_str || l.cantidad || 1;
+        row.prod_unidad = l.unidad || 'Ud';
+        expanded.push(row);
+      });
+    } else {
+      const row = Object.assign({}, item);
+      row.prod_pedido = item.numeros_pedidos || '';
+      row.prod_linea = 1;
+      row.prod_codigo = '-';
+      row.prod_codigo_sec = '-';
+      row.prod_descripcion = item.mercancia_resumen || 'Artículos de albarán';
+      row.prod_cantidad = item.total_unidades || 1;
+      row.prod_unidad = 'Ud';
+      expanded.push(row);
+    }
+  });
+  return expanded;
+}
+
 // ==========================================
-// EXPORTACIÓN EXCEL (.XLSX) PROFESIONAL
+// EXPORTACIÓN EXCEL (.XLSX) Y CSV COMPLETO
 // ==========================================
-async function exportTable(model, format = 'xlsx', tipo = 'resumen') {
+async function exportTable(model, format = 'xlsx', tipo = 'detalle') {
   let list = extractedItems;
   if (model === 'SALTOKI') list = list.filter(it => it.modelo === 'SALTOKI');
   else if (model === 'AQUAFER') list = list.filter(it => it.modelo === 'AQUAFER');
@@ -1199,12 +1231,12 @@ async function exportTable(model, format = 'xlsx', tipo = 'resumen') {
   if (!isSelective) itemsToExport = processed;
 
   const dateStr = new Date().toISOString().slice(0, 10);
-  const outName = `Lote_Albaranes_${model}_${isSelective ? 'Seleccionados_' : ''}${dateStr}_${itemsToExport.length}Docs`;
+  const outName = `Albaranes_${model}_${isSelective ? 'Seleccionados_' : ''}${dateStr}_${itemsToExport.length}Docs`;
 
   if (format === 'xlsx') {
     await downloadStyledExcel(itemsToExport, model, outName + '.xlsx');
   } else {
-    downloadCsv(itemsToExport, model, outName + (tipo === 'detalle' ? '_Detalle' : '_Resumen') + '.csv', tipo);
+    downloadCsv(itemsToExport, model, outName + (tipo === 'detalle' ? '_Completo_Productos' : '_Resumen') + '.csv', tipo);
   }
 }
 
@@ -1216,7 +1248,7 @@ async function exportMasterWorkbook() {
   }
 
   const dateStr = new Date().toISOString().slice(0, 10);
-  const outName = `Albaranes_Saltoki_y_Aquafer_${dateStr}.xlsx`;
+  const outName = `Albaranes_Saltoki_y_Aquafer_Completo_${dateStr}.xlsx`;
   await downloadStyledExcel(processed, 'TODOS', outName);
 }
 
@@ -1231,7 +1263,7 @@ async function exportSingleItem(id) {
 }
 
 async function downloadStyledExcel(items, modelo, filename) {
-  showToast(`⏳ Generando Excel estilizado con negritas y colores...`);
+  showToast(`⏳ Generando Excel completo con todos los productos, pedidos y cantidades...`);
   
   try {
     const response = await fetch('/api/exportar_excel', {
@@ -1259,15 +1291,16 @@ async function downloadStyledExcel(items, modelo, filename) {
 
   // Fallback con SheetJS en el cliente si el servidor falla
   if (typeof XLSX !== 'undefined') {
-    const ws = XLSX.utils.json_to_sheet(items);
+    const expanded = expandItemsToProductLines(items);
+    const ws = XLSX.utils.json_to_sheet(expanded);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, modelo);
+    XLSX.utils.book_append_sheet(wb, ws, "Detalle Productos");
     XLSX.writeFile(wb, filename);
     showToast(`📊 Excel descargado: ${filename}`);
   }
 }
 
-async function downloadCsv(items, modelo, filename, tipo = 'resumen') {
+async function downloadCsv(items, modelo, filename, tipo = 'detalle') {
   try {
     const response = await fetch('/api/exportar_csv', {
       method: 'POST',
@@ -1293,64 +1326,137 @@ async function downloadCsv(items, modelo, filename, tipo = 'resumen') {
   }
 
   let cols;
-  if (modelo === 'SALTOKI') {
-    cols = [
-      { k: 'archivo', l: 'Archivo' },
-      { k: 'numero_documento', l: 'Nº Albarán SF' },
-      { k: 'numeros_pedidos', l: 'Nº Pedido Cliente' },
-      { k: 'fecha_albaran_envio', l: 'Fecha Albarán' },
-      { k: 'fecha_pedido_cliente', l: 'Fecha Pedido' },
-      { k: 'lugar_descarga', l: 'Lugar Entrega / Descarga' },
-      { k: 'poblacion_descarga', l: 'Población / CP' },
-      { k: 'cliente_destinatario', l: 'Cliente / Razón Social' },
-      { k: 'direccion_logistico', l: 'Dirección Fiscal' },
-      { k: 'cif_cliente', l: 'CIF Cliente' },
-      { k: 'proveedor_remitente', l: 'Proveedor Remitente' },
-      { k: 'mercancia_resumen', l: 'Mercancía / Bultos' }
-    ];
-  } else if (modelo === 'AQUAFER') {
-    cols = [
-      { k: 'archivo', l: 'Archivo' },
-      { k: 'numero_documento', l: 'Nº Guía Remesa (GREM)' },
-      { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)' },
-      { k: 'numeros_pedidos', l: 'Nº Pedidos Cliente' },
-      { k: 'lugar_descarga', l: 'Lugar Descarga (Entrega)' },
-      { k: 'poblacion_descarga', l: 'Población / CP' },
-      { k: 'lugar_carga', l: 'Lugar Carga (Origen Portugal)' },
-      { k: 'cliente_destinatario', l: 'Cliente Destinatario' },
-      { k: 'direccion_logistico', l: 'Dirección Destinatario' },
-      { k: 'cif_cliente', l: 'NIF Destinatario' },
-      { k: 'proveedor_remitente', l: 'Proveedor Remitente' },
-      { k: 'fecha_albaran_envio', l: 'Fecha Emisión Albarán' },
-      { k: 'fecha_expedicion_cmr', l: 'Fecha Expedición CMR' },
-      { k: 'transportista', l: 'Transportista' },
-      { k: 'instrucciones_notas', l: 'Notas Entrega (Español)' },
-      { k: 'mercancia_resumen', l: 'Mercancía Resumen' }
-    ];
+  let rowsData;
+
+  if (tipo === 'detalle') {
+    rowsData = expandItemsToProductLines(items);
+    if (modelo === 'SALTOKI') {
+      cols = [
+        { k: 'archivo', l: 'Archivo PDF' },
+        { k: 'numero_documento', l: 'Nº Albarán SF' },
+        { k: 'prod_pedido', l: 'Nº Pedido Cliente' },
+        { k: 'prod_linea', l: 'Línea' },
+        { k: 'prod_codigo', l: 'Código / Ref. Artículo' },
+        { k: 'prod_codigo_sec', l: 'Código Saltoki' },
+        { k: 'prod_descripcion', l: 'Descripción del Producto' },
+        { k: 'prod_cantidad', l: 'Cantidad' },
+        { k: 'prod_unidad', l: 'Unidad' },
+        { k: 'fecha_albaran_envio', l: 'Fecha Albarán' },
+        { k: 'fecha_pedido_cliente', l: 'Fecha Pedido' },
+        { k: 'lugar_descarga', l: 'Lugar Entrega / Descarga' },
+        { k: 'poblacion_descarga', l: 'Población / CP' },
+        { k: 'cliente_destinatario', l: 'Cliente / Razón Social' },
+        { k: 'direccion_logistico', l: 'Dirección Fiscal' },
+        { k: 'cif_cliente', l: 'CIF Cliente' },
+        { k: 'proveedor_remitente', l: 'Proveedor Remitente' }
+      ];
+    } else if (modelo === 'AQUAFER') {
+      cols = [
+        { k: 'archivo', l: 'Archivo PDF' },
+        { k: 'numero_documento', l: 'Nº Guía Remesa (GREM)' },
+        { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)' },
+        { k: 'prod_pedido', l: 'Nº Pedido Cliente' },
+        { k: 'prod_linea', l: 'Línea' },
+        { k: 'prod_codigo', l: 'Código Artículo / Ref.' },
+        { k: 'prod_descripcion', l: 'Descripción del Producto' },
+        { k: 'prod_cantidad', l: 'Cantidad' },
+        { k: 'prod_unidad', l: 'Unidad' },
+        { k: 'lugar_descarga', l: 'Lugar de Descarga (Entrega)' },
+        { k: 'poblacion_descarga', l: 'Población / CP' },
+        { k: 'lugar_carga', l: 'Lugar de Carga (Portugal)' },
+        { k: 'cliente_destinatario', l: 'Cliente Destinatario' },
+        { k: 'direccion_logistico', l: 'Dirección Fiscal' },
+        { k: 'cif_cliente', l: 'NIF Destinatario' },
+        { k: 'proveedor_remitente', l: 'Proveedor Remitente' },
+        { k: 'fecha_albaran_envio', l: 'Fecha Emisión' },
+        { k: 'transportista', l: 'Transportista' },
+        { k: 'instrucciones_notas', l: 'Notas de Entrega (Español)' }
+      ];
+    } else {
+      cols = [
+        { k: 'archivo', l: 'Archivo PDF' },
+        { k: 'modelo', l: 'Modelo' },
+        { k: 'numero_documento', l: 'Nº Documento / Albarán' },
+        { k: 'numero_cmr', l: 'Nº CMR' },
+        { k: 'prod_pedido', l: 'Nº Pedido Cliente' },
+        { k: 'prod_linea', l: 'Línea' },
+        { k: 'prod_codigo', l: 'Código / Ref. Artículo' },
+        { k: 'prod_descripcion', l: 'Descripción del Producto' },
+        { k: 'prod_cantidad', l: 'Cantidad' },
+        { k: 'prod_unidad', l: 'Unidad' },
+        { k: 'lugar_descarga', l: 'Lugar Descarga' },
+        { k: 'poblacion_descarga', l: 'Población / CP' },
+        { k: 'cliente_destinatario', l: 'Cliente Destinatario' },
+        { k: 'direccion_logistico', l: 'Dirección Fiscal' },
+        { k: 'cif_cliente', l: 'CIF / NIF' },
+        { k: 'proveedor_remitente', l: 'Proveedor' },
+        { k: 'fecha_albaran_envio', l: 'Fecha Albarán' },
+        { k: 'fecha_pedido_cliente', l: 'Fecha Pedido' },
+        { k: 'transportista', l: 'Transportista' },
+        { k: 'instrucciones_notas', l: 'Notas Entrega' }
+      ];
+    }
   } else {
-    cols = [
-      { k: 'archivo', l: 'Archivo' },
-      { k: 'modelo', l: 'Modelo' },
-      { k: 'numero_documento', l: 'Nº Documento / Albarán' },
-      { k: 'numero_cmr', l: 'Nº CMR' },
-      { k: 'numeros_pedidos', l: 'Nº Pedidos' },
-      { k: 'lugar_descarga', l: 'Lugar Descarga' },
-      { k: 'poblacion_descarga', l: 'Población / CP' },
-      { k: 'cliente_destinatario', l: 'Cliente Destinatario' },
-      { k: 'direccion_logistico', l: 'Dirección Fiscal' },
-      { k: 'cif_cliente', l: 'CIF / NIF' },
-      { k: 'proveedor_remitente', l: 'Proveedor' },
-      { k: 'fecha_albaran_envio', l: 'Fecha Albarán' },
-      { k: 'fecha_pedido_cliente', l: 'Fecha Pedido' },
-      { k: 'transportista', l: 'Transportista' },
-      { k: 'instrucciones_notas', l: 'Notas Entrega' }
-    ];
+    rowsData = items;
+    if (modelo === 'SALTOKI') {
+      cols = [
+        { k: 'archivo', l: 'Archivo PDF' },
+        { k: 'numero_documento', l: 'Nº Albarán SF' },
+        { k: 'numeros_pedidos', l: 'Nº Pedido Cliente' },
+        { k: 'fecha_albaran_envio', l: 'Fecha Albarán' },
+        { k: 'fecha_pedido_cliente', l: 'Fecha Pedido' },
+        { k: 'lugar_descarga', l: 'Lugar Entrega / Descarga' },
+        { k: 'poblacion_descarga', l: 'Población / CP' },
+        { k: 'cliente_destinatario', l: 'Cliente / Razón Social' },
+        { k: 'direccion_logistico', l: 'Dirección Fiscal' },
+        { k: 'cif_cliente', l: 'CIF Cliente' },
+        { k: 'proveedor_remitente', l: 'Proveedor Remitente' },
+        { k: 'mercancia_resumen', l: 'Mercancía / Bultos' }
+      ];
+    } else if (modelo === 'AQUAFER') {
+      cols = [
+        { k: 'archivo', l: 'Archivo PDF' },
+        { k: 'numero_documento', l: 'Nº Guía Remesa (GREM)' },
+        { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)' },
+        { k: 'numeros_pedidos', l: 'Nº Pedidos Cliente' },
+        { k: 'lugar_descarga', l: 'Lugar Descarga (Entrega)' },
+        { k: 'poblacion_descarga', l: 'Población / CP' },
+        { k: 'lugar_carga', l: 'Lugar Carga (Origen Portugal)' },
+        { k: 'cliente_destinatario', l: 'Cliente Destinatario' },
+        { k: 'direccion_logistico', l: 'Dirección Destinatario' },
+        { k: 'cif_cliente', l: 'NIF Destinatario' },
+        { k: 'proveedor_remitente', l: 'Proveedor Remitente' },
+        { k: 'fecha_albaran_envio', l: 'Fecha Emisión Albarán' },
+        { k: 'fecha_expedicion_cmr', l: 'Fecha Expedición CMR' },
+        { k: 'transportista', l: 'Transportista' },
+        { k: 'instrucciones_notas', l: 'Notas Entrega (Español)' },
+        { k: 'mercancia_resumen', l: 'Mercancía Resumen' }
+      ];
+    } else {
+      cols = [
+        { k: 'archivo', l: 'Archivo PDF' },
+        { k: 'modelo', l: 'Modelo' },
+        { k: 'numero_documento', l: 'Nº Documento / Albarán' },
+        { k: 'numero_cmr', l: 'Nº CMR' },
+        { k: 'numeros_pedidos', l: 'Nº Pedidos' },
+        { k: 'lugar_descarga', l: 'Lugar Descarga' },
+        { k: 'poblacion_descarga', l: 'Población / CP' },
+        { k: 'cliente_destinatario', l: 'Cliente Destinatario' },
+        { k: 'direccion_logistico', l: 'Dirección Fiscal' },
+        { k: 'cif_cliente', l: 'CIF / NIF' },
+        { k: 'proveedor_remitente', l: 'Proveedor' },
+        { k: 'fecha_albaran_envio', l: 'Fecha Albarán' },
+        { k: 'fecha_pedido_cliente', l: 'Fecha Pedido' },
+        { k: 'transportista', l: 'Transportista' },
+        { k: 'instrucciones_notas', l: 'Notas Entrega' }
+      ];
+    }
   }
 
   const rows = [];
   rows.push(cols.map(c => `"${c.l}"`).join(';'));
 
-  items.forEach(item => {
+  rowsData.forEach(item => {
     const row = cols.map(c => {
       let v = item[c.k] || '';
       v = String(v).replace(/[\r\n]+/g, ', ').replace(/[ \t]+/g, ' ').replace(/"/g, '""').trim();
