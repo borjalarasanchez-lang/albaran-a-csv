@@ -699,6 +699,22 @@ tr.selected-row td {
 }
 
 /* ===================== Action Buttons in Row ===================== */
+.timestamp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  font-family: monospace, ui-monospace, sans-serif;
+  letter-spacing: -0.02em;
+}
+
 .action-btns {
   display: flex;
   gap: 5px;

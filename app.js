@@ -22,6 +22,119 @@ let currentPreviewIndex = null;
 let currentSearchTerm = '';
 
 // ==========================================
+// ALMACENAMIENTO PERSISTENTE (INDEXEDDB + CADUCIDAD A 2 MESES)
+// ==========================================
+const DB_NAME = 'AlbaranProDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'albaranes';
+const DOS_MESES_MS = 60 * 24 * 60 * 60 * 1000; // 60 días (~2 meses en milisegundos)
+
+function openDatabase() {
+  return new Promise((resolve) => {
+    if (!window.indexedDB) {
+      resolve(null);
+      return;
+    }
+    try {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: '_id' });
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+async function saveAllToStorage() {
+  try {
+    const db = await openDatabase();
+    if (db) {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.clear();
+      extractedItems.forEach(item => {
+        const copy = Object.assign({}, item);
+        delete copy.fileObj; // No guardar referencias binarias efímeras
+        store.put(copy);
+      });
+    }
+  } catch (e) {
+    console.warn('Aviso guardado IndexedDB:', e);
+  }
+
+  try {
+    const backupList = extractedItems.map(it => {
+      const copy = Object.assign({}, it);
+      delete copy.fileObj;
+      return copy;
+    });
+    localStorage.setItem('albaran_pro_backup', JSON.stringify(backupList));
+  } catch (e) {
+    // Si localStorage está al límite, ignorar
+  }
+}
+
+async function loadFromStorage() {
+  let loaded = [];
+  try {
+    const db = await openDatabase();
+    if (db) {
+      loaded = await new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => resolve([]);
+      });
+    }
+  } catch (e) {
+    console.warn('Aviso carga IndexedDB:', e);
+  }
+
+  if ((!loaded || loaded.length === 0) && localStorage.getItem('albaran_pro_backup')) {
+    try {
+      loaded = JSON.parse(localStorage.getItem('albaran_pro_backup')) || [];
+    } catch (e) {}
+  }
+
+  if (!Array.isArray(loaded)) loaded = [];
+
+  // Depuración automática de albaranes de más de 2 meses (60 días)
+  const now = Date.now();
+  let expiredCount = 0;
+  const validItems = [];
+
+  for (const item of loaded) {
+    const itemTime = item._timestamp || now;
+    if (now - itemTime > DOS_MESES_MS) {
+      expiredCount++;
+    } else {
+      ensureItemDefaults(item);
+      validItems.push(item);
+    }
+  }
+
+  // Ordenar siempre los más recientes primero
+  validItems.sort((a, b) => (b._timestamp || 0) - (a._timestamp || 0));
+  extractedItems = validItems;
+
+  if (expiredCount > 0) {
+    await saveAllToStorage();
+    setTimeout(() => {
+      showToast(`🧹 Se han limpiado automáticamente ${expiredCount} albarán(es) con más de 2 meses de antigüedad.`);
+    }, 1500);
+  }
+
+  return validItems;
+}
+
+// ==========================================
 // ELEMENTOS DEL DOM
 // ==========================================
 const dropzone = document.getElementById('dropzone');
@@ -95,7 +208,10 @@ const modalFields = {
 // ==========================================
 // INICIALIZACIÓN
 // ==========================================
-function init() {
+async function init() {
+  // Cargar albaranes guardados en el navegador y limpiar automáticamente los > 2 meses
+  await loadFromStorage();
+
   ['dragenter', 'dragover'].forEach(eventName => {
     dropzone.addEventListener(eventName, (e) => {
       e.preventDefault();
@@ -217,9 +333,11 @@ async function handleFiles(files) {
     if (response.ok) {
       const serverResults = await response.json();
       if (Array.isArray(serverResults) && serverResults.length > 0) {
+        const batchTime = Date.now();
         serverResults.forEach((data, idx) => {
-          data._id = 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+          data._id = 'item_' + batchTime + '_' + idx + '_' + Math.random().toString(36).substr(2, 6);
           data.fileObj = pdfFiles[idx] || null;
+          data._timestamp = batchTime;
           ensureItemDefaults(data);
           extractedItems.push(data);
           processedCount++;
@@ -240,7 +358,8 @@ async function handleFiles(files) {
 
       try {
         const data = await extractDataClientSide(file);
-        data._id = 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        data._id = 'item_' + Date.now() + '_' + i + '_' + Math.random().toString(36).substr(2, 6);
+        data._timestamp = Date.now();
         ensureItemDefaults(data);
         extractedItems.push(data);
         processedCount++;
@@ -251,7 +370,10 @@ async function handleFiles(files) {
     }
   }
 
+  // Ordenar siempre los más recientes primero y persistir en la app
+  extractedItems.sort((a, b) => (b._timestamp || 0) - (a._timestamp || 0));
   renderTables();
+  await saveAllToStorage();
 
   progressBar.style.width = '100%';
   progressText.textContent = `¡Listo! Se procesaron ${processedCount} albarán(es) organizados por empresa.`;
@@ -273,6 +395,20 @@ function ensureItemDefaults(item) {
     item.lista_pedidos = item.numeros_pedidos ? String(item.numeros_pedidos).split(',').map(s => s.trim()).filter(Boolean) : [];
   }
   
+  // Registro de Fecha y Hora de transformación para orden cronológico
+  if (!item._timestamp) {
+    item._timestamp = Date.now();
+  }
+  if (!item._fecha_transformacion) {
+    const d = new Date(item._timestamp);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    item._fecha_transformacion = `${day}/${month}/${year} ${hours}:${minutes}`;
+  }
+
   // Nombre sugerido único para cada PDF
   if (!item.nombre_archivo_sugerido) {
     const mod = item.modelo || 'General';
@@ -477,6 +613,8 @@ function getProcessedItems(items) {
     return splitList;
   }
 
+  // Ordenar los más recientes primero
+  list.sort((a, b) => (b._timestamp || 0) - (a._timestamp || 0));
   return list;
 }
 
@@ -585,6 +723,9 @@ function renderSaltokiRows(items) {
           <button class="icon-btn delete" title="Eliminar fila" onclick="deleteItem('${item._id}')">🗑️</button>
         </div>
       </td>
+      <td style="white-space: nowrap;">
+        <span class="timestamp-pill" title="Transformado el ${escapeHtml(item._fecha_transformacion || '')}">🕒 ${escapeHtml(item._fecha_transformacion || 'Reciente')}</span>
+      </td>
       <td>
         <div class="file-cell" title="${escapeHtml(item.archivo)}">
           <span>📄</span>
@@ -683,6 +824,9 @@ function renderAquaferRows(items) {
           <button class="icon-btn" title="Ver documento PDF y editar campos" onclick="openPdfModal(${origIdx})">👁️</button>
           <button class="icon-btn delete" title="Eliminar fila" onclick="deleteItem('${item._id}')">🗑️</button>
         </div>
+      </td>
+      <td style="white-space: nowrap;">
+        <span class="timestamp-pill" title="Transformado el ${escapeHtml(item._fecha_transformacion || '')}">🕒 ${escapeHtml(item._fecha_transformacion || 'Reciente')}</span>
       </td>
       <td>
         <div class="file-cell" title="${escapeHtml(item.archivo)}">
@@ -808,6 +952,9 @@ function renderAllRows(items) {
           <button class="icon-btn delete" title="Eliminar fila" onclick="deleteItem('${item._id}')">🗑️</button>
         </div>
       </td>
+      <td style="white-space: nowrap;">
+        <span class="timestamp-pill" title="Transformado el ${escapeHtml(item._fecha_transformacion || '')}">🕒 ${escapeHtml(item._fecha_transformacion || 'Reciente')}</span>
+      </td>
       <td>
         <div class="file-cell" title="${escapeHtml(item.archivo)}">
           <span>📄</span>
@@ -920,6 +1067,7 @@ function attachInlineEditing() {
         if (field === 'numeros_pedidos') {
           target.lista_pedidos = val ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
         }
+        saveAllToStorage();
       }
     });
 
@@ -1155,17 +1303,19 @@ function deleteItem(id) {
     selectedItemIds.delete(id);
     extractedItems.splice(idx, 1);
     renderTables();
+    saveAllToStorage();
     showToast('Fila eliminada.');
   }
 }
 
 function clearAll() {
   if (extractedItems.length === 0) return;
-  if (confirm('¿Estás seguro de que deseas vaciar todos los albaranes procesados?')) {
+  if (confirm('¿Estás seguro de que deseas vaciar todos los albaranes guardados en la app?')) {
     extractedItems = [];
     selectedItemIds.clear();
     renderTables();
-    showToast('Tabla limpiada.');
+    saveAllToStorage();
+    showToast('Todos los albaranes han sido eliminados de la app.');
   }
 }
 
@@ -1288,6 +1438,7 @@ function syncModalToItem() {
   if (item.numeros_pedidos) {
     item.lista_pedidos = item.numeros_pedidos.split(',').map(s => s.trim()).filter(Boolean);
   }
+  saveAllToStorage();
 }
 
 function closePdfModal() {
