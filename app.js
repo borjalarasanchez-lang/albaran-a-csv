@@ -203,7 +203,6 @@ const modalFields = {
   proveedor_remitente: document.getElementById('modalFieldProveedor'),
   fecha_albaran_envio: document.getElementById('modalFieldFechaAlbaran'),
   fecha_pedido_cliente: document.getElementById('modalFieldFechaPedido'),
-  fecha_vencimiento: document.getElementById('modalFieldFechaVencimiento'),
   transportista: document.getElementById('modalFieldTransportista'),
   instrucciones_notas: document.getElementById('modalFieldNotas'),
   mercancia_resumen: document.getElementById('modalFieldMercancia')
@@ -991,11 +990,6 @@ function renderAquaferRows(items) {
         </span>
       </td>
       <td>
-        <span class="cell-editable tag-date" contenteditable="true" data-field="fecha_vencimiento" data-id="${item._id}">
-          ${escapeHtml(item.fecha_vencimiento || '-')}
-        </span>
-      </td>
-      <td>
         <span class="cell-editable tag-date" contenteditable="true" data-field="fecha_expedicion_cmr" data-id="${item._id}">
           ${escapeHtml(item.fecha_expedicion_cmr || '-')}
         </span>
@@ -1347,7 +1341,6 @@ async function downloadCsv(items, modelo, filename, tipo = 'resumen') {
       { k: 'cif_cliente', l: 'NIF Destinatario' },
       { k: 'proveedor_remitente', l: 'Proveedor Remitente' },
       { k: 'fecha_albaran_envio', l: 'Fecha Emisión Albarán' },
-      { k: 'fecha_vencimiento', l: 'Fecha Vencimiento' },
       { k: 'fecha_expedicion_cmr', l: 'Fecha Expedición CMR' },
       { k: 'transportista', l: 'Transportista' },
       { k: 'instrucciones_notas', l: 'Notas Entrega (Español)' },

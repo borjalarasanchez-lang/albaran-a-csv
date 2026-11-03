@@ -65,7 +65,6 @@ COLUMNAS_PRODUCTOS_AQUAFER = [
     ("cif_cliente", "NIF Destinatario", 14),
     ("proveedor_remitente", "Proveedor Remitente", 30),
     ("fecha_albaran_envio", "Fecha Emisión", 15),
-    ("fecha_vencimiento", "Fecha Vto", 14),
     ("transportista", "Transportista", 26),
     ("instrucciones_notas", "Notas de Entrega (Español)", 24)
 ]
@@ -105,7 +104,6 @@ COLUMNAS_RESUMEN_AQUAFER = [
     ("cif_cliente", "NIF Destinatario", 14),
     ("proveedor_remitente", "Proveedor Remitente", 32),
     ("fecha_albaran_envio", "Fecha Emisión Albarán", 16),
-    ("fecha_vencimiento", "Fecha Vencimiento", 15),
     ("fecha_expedicion_cmr", "Fecha Expedición CMR", 18),
     ("transportista", "Transportista", 28),
     ("instrucciones_notas", "Notas de Entrega (Español)", 26),
