@@ -248,3 +248,4 @@ def delete_shared_item(item_id: str) -> bool:
 def clear_shared_items() -> bool:
     """Vacía toda la memoria compartida para todos los usuarios."""
     return save_shared_items([])
+

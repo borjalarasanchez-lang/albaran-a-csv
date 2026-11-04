@@ -335,9 +335,178 @@ const modalFields = {
 };
 
 // ==========================================
+// CONTROL DE ACCESO / AUTENTICACIÓN (APEP GROUP)
+// ==========================================
+const AUTH_TOKEN_KEY = 'apep_auth_token_v1';
+const AUTH_USER_KEY = 'apep_auth_user_v1';
+const VALID_TOKEN = 'apep_session_valid_2026';
+
+function isAuthenticated() {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY) || sessionStorage.getItem(AUTH_TOKEN_KEY);
+  return token === VALID_TOKEN;
+}
+
+function getSessionUser() {
+  return localStorage.getItem(AUTH_USER_KEY) || sessionStorage.getItem(AUTH_USER_KEY) || 'apepgroup';
+}
+
+function showApp() {
+  const overlay = document.getElementById('loginOverlay');
+  const container = document.getElementById('appContainer');
+  const badge = document.getElementById('userSessionBadge');
+  const userSpan = document.getElementById('sessionUserName');
+
+  if (overlay) overlay.style.display = 'none';
+  if (container) container.style.display = 'block';
+  if (badge) badge.style.display = 'inline-flex';
+  if (userSpan) userSpan.textContent = getSessionUser();
+}
+
+function showLogin() {
+  const overlay = document.getElementById('loginOverlay');
+  const container = document.getElementById('appContainer');
+  const badge = document.getElementById('userSessionBadge');
+  const errorMsg = document.getElementById('loginErrorMsg');
+
+  if (overlay) overlay.style.display = 'flex';
+  if (container) container.style.display = 'none';
+  if (badge) badge.style.display = 'none';
+  if (errorMsg) errorMsg.classList.remove('visible');
+
+  const userInput = document.getElementById('loginUsername');
+  if (userInput) {
+    setTimeout(() => userInput.focus(), 100);
+  }
+}
+
+function togglePassVisibility() {
+  const passInput = document.getElementById('loginPassword');
+  const toggleBtn = document.getElementById('btnTogglePass');
+  if (!passInput || !toggleBtn) return;
+  if (passInput.type === 'password') {
+    passInput.type = 'text';
+    toggleBtn.textContent = '🙈';
+    toggleBtn.title = 'Ocultar contraseña';
+  } else {
+    passInput.type = 'password';
+    toggleBtn.textContent = '👁️';
+    toggleBtn.title = 'Mostrar contraseña';
+  }
+}
+
+async function handleLoginSubmit(event) {
+  if (event) event.preventDefault();
+  const userInput = document.getElementById('loginUsername');
+  const passInput = document.getElementById('loginPassword');
+  const rememberInput = document.getElementById('loginRemember');
+  const errorMsg = document.getElementById('loginErrorMsg');
+  const errorText = document.getElementById('loginErrorText');
+  const submitBtn = document.getElementById('btnLoginSubmit');
+
+  const username = (userInput ? userInput.value : '').trim();
+  const password = (passInput ? passInput.value : '').trim();
+  const remember = rememberInput ? rememberInput.checked : true;
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>Verificando...</span> <span>⏳</span>';
+  }
+
+  let loginSuccess = false;
+  let loggedUser = 'apepgroup';
+
+  try {
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.ok) {
+        loginSuccess = true;
+        loggedUser = data.user || 'apepgroup';
+      }
+    } else {
+      if (response.status === 401) {
+        loginSuccess = false;
+      } else {
+        if (username.toLowerCase() === 'apepgroup' && password === 'adminapep') {
+          loginSuccess = true;
+          loggedUser = 'apepgroup';
+        }
+      }
+    }
+  } catch (err) {
+    if (username.toLowerCase() === 'apepgroup' && password === 'adminapep') {
+      loginSuccess = true;
+      loggedUser = 'apepgroup';
+    }
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = '<span>Acceder a la Plataforma</span> <span>→</span>';
+  }
+
+  if (loginSuccess) {
+    if (errorMsg) errorMsg.classList.remove('visible');
+
+    if (remember) {
+      localStorage.setItem(AUTH_TOKEN_KEY, VALID_TOKEN);
+      localStorage.setItem(AUTH_USER_KEY, loggedUser);
+      sessionStorage.removeItem(AUTH_TOKEN_KEY);
+      sessionStorage.removeItem(AUTH_USER_KEY);
+    } else {
+      sessionStorage.setItem(AUTH_TOKEN_KEY, VALID_TOKEN);
+      sessionStorage.setItem(AUTH_USER_KEY, loggedUser);
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem(AUTH_USER_KEY);
+    }
+
+    showApp();
+    await init();
+    showToast(`👋 ¡Bienvenido, ${loggedUser}! Sesión iniciada.`);
+  } else {
+    if (errorMsg) {
+      if (errorText) errorText.textContent = 'Usuario o contraseña incorrectos. Verifique sus datos.';
+      errorMsg.classList.remove('visible');
+      void errorMsg.offsetWidth;
+      errorMsg.classList.add('visible');
+    }
+    if (passInput) {
+      passInput.value = '';
+      passInput.focus();
+    }
+  }
+}
+
+function logout() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_USER_KEY);
+  sessionStorage.removeItem(AUTH_TOKEN_KEY);
+  sessionStorage.removeItem(AUTH_USER_KEY);
+  showLogin();
+  showToast('👋 Sesión cerrada correctamente.');
+}
+
+function checkAuthOnStart() {
+  if (isAuthenticated()) {
+    showApp();
+    init();
+  } else {
+    showLogin();
+  }
+}
+
+// ==========================================
 // INICIALIZACIÓN
 // ==========================================
+let appInitialized = false;
 async function init() {
+  if (appInitialized) return;
+  appInitialized = true;
   // 1. Cargar desde la memoria compartida remota o del servidor
   await syncWithSharedMemory();
 
@@ -1893,4 +2062,4 @@ function closePdfModal() {
   showToast('💾 Cambios guardados correctamente.');
 }
 
-window.addEventListener('DOMContentLoaded', init);
+window.addEventListener('DOMContentLoaded', checkAuthOnStart);

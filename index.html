@@ -7,11 +7,81 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=3.3">
+  <link rel="stylesheet" href="style.css?v=3.4">
 </head>
 <body>
 
-  <div class="container">
+  <!-- Pantalla de Inicio de Sesión Obligatorio -->
+  <div id="loginOverlay" class="login-overlay">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo">🔐</div>
+        <h2 class="login-title">APEP Group</h2>
+        <p class="login-subtitle">Portal Seguro de Conversión de Albaranes</p>
+      </div>
+
+      <div id="loginErrorMsg" class="login-error-msg">
+        <span>⚠️</span>
+        <span id="loginErrorText">Usuario o contraseña incorrectos</span>
+      </div>
+
+      <form id="loginForm" class="login-form" onsubmit="handleLoginSubmit(event)" autocomplete="on">
+        <div class="login-field">
+          <label for="loginUsername">Usuario</label>
+          <div class="login-input-wrap">
+            <span class="login-input-icon">👤</span>
+            <input 
+              type="text" 
+              id="loginUsername" 
+              class="login-input" 
+              placeholder="apepgroup" 
+              required 
+              autocomplete="username" 
+              autocapitalize="none"
+              spellcheck="false"
+              autofocus
+            >
+          </div>
+        </div>
+
+        <div class="login-field">
+          <label for="loginPassword">Contraseña</label>
+          <div class="login-input-wrap">
+            <span class="login-input-icon">🔒</span>
+            <input 
+              type="password" 
+              id="loginPassword" 
+              class="login-input has-toggle" 
+              placeholder="••••••••" 
+              required 
+              autocomplete="current-password"
+            >
+            <button type="button" class="btn-toggle-pass" id="btnTogglePass" onclick="togglePassVisibility()" title="Mostrar u ocultar contraseña">
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <div class="login-options">
+          <label class="login-remember">
+            <input type="checkbox" id="loginRemember" checked>
+            <span>Recordar sesión en este equipo</span>
+          </label>
+        </div>
+
+        <button type="submit" class="btn-login-submit" id="btnLoginSubmit">
+          <span>Acceder a la Plataforma</span>
+          <span>→</span>
+        </button>
+      </form>
+
+      <div class="login-footer-info">
+        <span>🛡️ Acceso corporativo restringido a personal autorizado</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="container" id="appContainer" style="display: none;">
     <!-- Header -->
     <header>
       <div class="brand">
@@ -22,6 +92,11 @@
         </div>
       </div>
       <div class="header-badges">
+        <div id="userSessionBadge" class="user-session-badge" style="display: none;">
+          <span class="user-session-dot"></span>
+          <span>Usuario: <strong class="user-session-name" id="sessionUserName">apepgroup</strong></span>
+          <button type="button" class="btn-logout" onclick="logout()" title="Cerrar sesión">🚪 Salir</button>
+        </div>
         <div id="sharedMemoryBadge" class="sync-badge sync-online" title="Memoria compartida multiusuario en tiempo real">
           <span class="sync-dot"></span>
           <span id="syncText">Memoria compartida conectada</span>
@@ -480,6 +555,6 @@
   <!-- Scripts -->
   <script src="lib/pdf.min.js"></script>
   <script src="lib/xlsx.full.min.js"></script>
-  <script src="app.js?v=3.7"></script>
+  <script src="app.js?v=3.8"></script>
 </body>
 </html>

@@ -75,6 +75,42 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
         url_parts = urllib.parse.urlparse(self.path)
         url_path = url_parts.path
 
+        # 0. API: Login / Autenticación
+        if url_path == "/api/login" or url_path.endswith("/api/login"):
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length)
+                payload = json.loads(body.decode("utf-8")) if body else {}
+
+                username = str(payload.get("username", "")).strip().lower()
+                password = str(payload.get("password", "")).strip()
+
+                if username == "apepgroup" and password == "adminapep":
+                    res = {
+                        "ok": True,
+                        "user": "apepgroup",
+                        "token": "apep_session_valid_2026",
+                        "message": "Autenticación exitosa"
+                    }
+                    self.send_response(200)
+                else:
+                    res = {
+                        "ok": False,
+                        "error": "Usuario o contraseña incorrectos"
+                    }
+                    self.send_response(401)
+
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                return
+
         # 1. API: Extraer datos de PDFs subidos
         if url_path == "/api/extraer":
             try:
