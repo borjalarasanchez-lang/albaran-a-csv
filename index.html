@@ -113,6 +113,11 @@
       </div>
 
       <div class="controls-right">
+        <label class="toggle-control" title="Muestra cada artículo individual en su propia fila de la tabla con código, descripción y cantidad">
+          <input type="checkbox" id="splitProductsToggle" onchange="toggleSplitProducts()">
+          <span>📦 Desglosar filas por Artículo</span>
+        </label>
+
         <label class="toggle-control" title="Si un PDF tiene varios pedidos, genera 1 fila independiente por cada pedido">
           <input type="checkbox" id="splitOrdersToggle" onchange="toggleSplitOrders()">
           <span>🔀 Desglosar filas por pedido</span>
@@ -470,6 +475,6 @@
   <!-- Scripts -->
   <script src="lib/pdf.min.js"></script>
   <script src="lib/xlsx.full.min.js"></script>
-  <script src="app.js?v=3.5"></script>
+  <script src="app.js?v=3.6"></script>
 </body>
 </html>

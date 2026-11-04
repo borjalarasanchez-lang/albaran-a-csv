@@ -69,6 +69,28 @@ COLUMNAS_PRODUCTOS_AQUAFER = [
     ("instrucciones_notas", "Notas de Entrega (Español)", 24)
 ]
 
+COLUMNAS_PRODUCTOS_TODOS = [
+    ("archivo", "Archivo PDF", 22),
+    ("modelo", "Empresa / Modelo", 16),
+    ("numero_documento", "Nº Documento / Albarán", 20),
+    ("numero_cmr", "Nº Carta Porte (CMR)", 16),
+    ("prod_pedido", "Nº Pedido Cliente", 18),
+    ("prod_linea", "Línea", 8),
+    ("prod_codigo", "Código / Ref. Artículo", 18),
+    ("prod_descripcion", "Descripción del Producto", 42),
+    ("prod_cantidad", "Cantidad", 12),
+    ("prod_unidad", "Unidad", 12),
+    ("lugar_descarga", "Lugar Entrega / Descarga", 36),
+    ("poblacion_descarga", "Población / CP", 18),
+    ("cliente_destinatario", "Cliente / Destinatario", 28),
+    ("direccion_logistico", "Dirección Fiscal", 32),
+    ("cif_cliente", "CIF / NIF", 14),
+    ("proveedor_remitente", "Proveedor Remitente", 28),
+    ("fecha_albaran_envio", "Fecha Albarán / Emisión", 16),
+    ("transportista", "Transportista", 24),
+    ("instrucciones_notas", "Notas de Entrega", 24)
+]
+
 # ==========================================
 # COLUMNAS RESUMEN CABECERAS
 # ==========================================
@@ -378,7 +400,7 @@ def generar_csv_texto(items: List[Dict[str, Any]], modelo: str = "TODOS", tipo: 
     elif modelo == "AQUAFER":
       cols = COLUMNAS_PRODUCTOS_AQUAFER
     else:
-      cols = COLUMNAS_PRODUCTOS_SALTOKI
+      cols = COLUMNAS_PRODUCTOS_TODOS
   else:
     rows_data = items
     if modelo == "SALTOKI":
