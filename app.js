@@ -51,7 +51,7 @@ function openDatabase() {
   });
 }
 
-async function saveAllToStorage() {
+async function saveLocalBackupOnly() {
   try {
     const db = await openDatabase();
     if (db) {
@@ -77,6 +77,130 @@ async function saveAllToStorage() {
     localStorage.setItem('albaran_pro_backup', JSON.stringify(backupList));
   } catch (e) {
     // Si localStorage está al límite, ignorar
+  }
+}
+
+async function saveAllToStorage() {
+  await saveLocalBackupOnly();
+  await pushToSharedMemory(extractedItems, 'replace_all');
+}
+
+let isSyncing = false;
+let lastSyncTimestamp = 0;
+
+async function syncWithSharedMemory(manual = false) {
+  if (isSyncing) return;
+  isSyncing = true;
+  const syncBadge = document.getElementById('sharedMemoryBadge');
+  const syncText = document.getElementById('syncText');
+
+  try {
+    const res = await fetch('/api/albaranes', {
+      method: 'GET',
+      headers: { 'Cache-Control': 'no-cache' }
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.items)) {
+        let serverItems = data.items;
+
+        // Migración inicial: si el servidor está vacío pero el cliente tiene albaranes locales
+        if (extractedItems.length > 0 && serverItems.length === 0) {
+          await pushToSharedMemory(extractedItems, 'replace_all');
+        } else {
+          // Detectar si hay cambios en la memoria compartida respecto a la vista actual
+          const currentSig = extractedItems.map(it => it._id + (it.numero_documento || '') + (it.mercancia_resumen || '')).join('|');
+          const serverSig = serverItems.map(it => it._id + (it.numero_documento || '') + (it.mercancia_resumen || '')).join('|');
+
+          if (currentSig !== serverSig || manual) {
+            serverItems.forEach(it => ensureItemDefaults(it));
+            serverItems.sort((a, b) => (b._timestamp || 0) - (a._timestamp || 0));
+            extractedItems = serverItems;
+            renderTables();
+            await saveLocalBackupOnly();
+            if (manual) showToast(`🟢 Memoria compartida sincronizada (${serverItems.length} albaranes)`);
+          }
+        }
+
+        if (syncBadge) {
+          syncBadge.className = 'sync-badge sync-online';
+          if (syncText) {
+            const backendName = data.backend && data.backend.name ? data.backend.name : 'Memoria Compartida';
+            syncText.textContent = `${backendName} (${extractedItems.length})`;
+          }
+        }
+        lastSyncTimestamp = Date.now();
+        isSyncing = false;
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('Aviso sincronización memoria compartida:', err);
+  }
+
+  // Fallback si la API no responde
+  if (syncBadge) {
+    syncBadge.className = 'sync-badge sync-offline';
+    if (syncText) syncText.textContent = 'Memoria local (Sin sincronizar)';
+  }
+  isSyncing = false;
+}
+
+async function pushToSharedMemory(items, action = 'add') {
+  if (!items || items.length === 0) return;
+  try {
+    const cleanList = items.map(it => {
+      const copy = Object.assign({}, it);
+      delete copy.fileObj;
+      delete copy.pdfDoc;
+      return copy;
+    });
+
+    await fetch('/api/albaranes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action, items: cleanList })
+    });
+  } catch (err) {
+    console.warn('No se pudo enviar a la memoria compartida:', err);
+  }
+}
+
+async function updateInSharedMemory(item) {
+  if (!item || !item._id) return;
+  try {
+    const copy = Object.assign({}, item);
+    delete copy.fileObj;
+    delete copy.pdfDoc;
+    await fetch('/api/albaranes', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item: copy })
+    });
+  } catch (err) {
+    console.warn('No se pudo actualizar en la memoria compartida:', err);
+  }
+}
+
+async function deleteFromSharedMemory(id) {
+  if (!id) return;
+  try {
+    await fetch(`/api/albaranes?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+  } catch (err) {
+    console.warn('No se pudo eliminar de la memoria compartida:', err);
+  }
+}
+
+async function clearSharedMemoryOnServer() {
+  try {
+    await fetch('/api/albaranes?action=clear_all', {
+      method: 'DELETE'
+    });
+  } catch (err) {
+    console.warn('No se pudo vaciar la memoria compartida:', err);
   }
 }
 
@@ -214,8 +338,26 @@ const modalFields = {
 // INICIALIZACIÓN
 // ==========================================
 async function init() {
-  // Cargar albaranes guardados en el navegador y limpiar automáticamente los > 2 meses
-  await loadFromStorage();
+  // 1. Cargar desde la memoria compartida remota o del servidor
+  await syncWithSharedMemory();
+
+  // 2. Si el servidor está vacío pero hay datos locales antiguos, migrarlos
+  if (extractedItems.length === 0) {
+    await loadFromStorage();
+    if (extractedItems.length > 0) {
+      await pushToSharedMemory(extractedItems, 'replace_all');
+    }
+  }
+
+  // 3. Sincronización continua en segundo plano para que todos los usuarios tengan la misma memoria
+  setInterval(() => {
+    syncWithSharedMemory();
+  }, 6000);
+
+  // Sincronizar también inmediatamente cuando el usuario vuelve a la pestaña
+  window.addEventListener('focus', () => {
+    syncWithSharedMemory();
+  });
 
   ['dragenter', 'dragover'].forEach(eventName => {
     dropzone.addEventListener(eventName, (e) => {
@@ -1259,7 +1401,8 @@ function attachInlineEditing() {
         if (field === 'numeros_pedidos') {
           target.lista_pedidos = val ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
         }
-        saveAllToStorage();
+        saveLocalBackupOnly();
+        updateInSharedMemory(target);
       }
     });
 
@@ -1595,24 +1738,28 @@ async function downloadCsv(items, modelo, filename, tipo = 'detalle') {
 }
 
 function deleteItem(id) {
-  const idx = extractedItems.findIndex(it => it._id === id || it._id === id.split('_')[0]);
+  const baseId = id.split('_p')[0].split('_')[0];
+  const idx = extractedItems.findIndex(it => it._id === id || it._id === baseId || it._id.startsWith(baseId));
   if (idx !== -1) {
+    const itemToDelete = extractedItems[idx];
     selectedItemIds.delete(id);
     extractedItems.splice(idx, 1);
     renderTables();
-    saveAllToStorage();
-    showToast('Fila eliminada.');
+    saveLocalBackupOnly();
+    deleteFromSharedMemory(itemToDelete._id);
+    showToast('🗑️ Albarán eliminado de la memoria compartida.');
   }
 }
 
-function clearAll() {
+async function clearAll() {
   if (extractedItems.length === 0) return;
-  if (confirm('¿Estás seguro de que deseas vaciar todos los albaranes guardados en la app?')) {
+  if (confirm('¿Estás seguro de que deseas vaciar todos los albaranes de la memoria compartida para todos los usuarios?')) {
     extractedItems = [];
     selectedItemIds.clear();
     renderTables();
-    saveAllToStorage();
-    showToast('Todos los albaranes han sido eliminados de la app.');
+    await saveLocalBackupOnly();
+    await clearSharedMemoryOnServer();
+    showToast('🧹 Todos los albaranes han sido eliminados de la memoria compartida.');
   }
 }
 

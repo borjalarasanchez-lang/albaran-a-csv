@@ -25,6 +25,7 @@ wheels/
 # Carpetas temporales y subidas
 temp_uploads/
 albaranes_extraidos.csv
+albaranes_compartidos.json
 
 # Vercel
 .vercel/

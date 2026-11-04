@@ -3,29 +3,64 @@ import sys
 import json
 import re
 import tempfile
+import urllib.parse
 from http.server import BaseHTTPRequestHandler
 
-# Asegurar que el directorio raíz está en sys.path para importar extractor y generador_excel
+# Asegurar que el directorio raíz está en sys.path para importar extractor, generador_excel y storage_manager
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 import extractor
 import generador_excel
+import storage_manager
+
 
 class handler(BaseHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         super().end_headers()
 
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
 
+    def do_GET(self):
+        url_parts = urllib.parse.urlparse(self.path)
+        url_path = url_parts.path
+
+        # API: Obtener albaranes compartidos por todos los usuarios
+        if url_path.endswith("/api/albaranes") or url_path == "/api/albaranes":
+            try:
+                items = storage_manager.get_shared_items()
+                backend = storage_manager.get_backend_info()
+                res = {
+                    "ok": True,
+                    "items": items,
+                    "count": len(items),
+                    "backend": backend
+                }
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                return
+
+        self.send_response(404)
+        self.end_headers()
+
     def do_POST(self):
-        url_path = self.path.split("?")[0]
+        url_parts = urllib.parse.urlparse(self.path)
+        url_path = url_parts.path
 
         # 1. API: Extraer datos de PDFs
         if url_path.endswith("/api/extraer") or url_path == "/api/extraer":
@@ -92,6 +127,10 @@ class handler(BaseHTTPRequestHandler):
                                     except Exception:
                                         pass
 
+                    # Guardar automáticamente en la memoria compartida
+                    if results:
+                        storage_manager.add_shared_items(results)
+
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.end_headers()
@@ -105,7 +144,43 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 return
 
-        # 2. API: Exportar Excel Estilizado
+        # 2. API: Almacenamiento Compartido (Añadir / Sincronizar)
+        elif url_path.endswith("/api/albaranes") or url_path == "/api/albaranes":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length)
+                payload = json.loads(body.decode("utf-8")) if body else {}
+
+                action = payload.get("action")
+                if action == "clear_all":
+                    storage_manager.clear_shared_items()
+                    res = {"ok": True, "count": 0, "items": []}
+                elif action == "delete":
+                    item_id = payload.get("id")
+                    deleted = storage_manager.delete_shared_item(item_id) if item_id else False
+                    res = {"ok": deleted, "items": storage_manager.get_shared_items()}
+                elif action == "replace_all":
+                    new_items = payload.get("items", [])
+                    storage_manager.save_shared_items(new_items)
+                    res = {"ok": True, "count": len(new_items), "items": new_items}
+                else:
+                    new_items = payload.get("items") or ([payload["item"]] if "item" in payload else [])
+                    updated_list = storage_manager.add_shared_items(new_items)
+                    res = {"ok": True, "count": len(updated_list), "items": updated_list}
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                return
+
+        # 3. API: Exportar Excel Estilizado
         elif url_path.endswith("/api/exportar_excel") or url_path == "/api/exportar_excel":
             try:
                 content_length = int(self.headers.get("Content-Length", 0))
@@ -135,7 +210,7 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 return
 
-        # 3. API: Exportar CSV UTF-8
+        # 4. API: Exportar CSV UTF-8
         elif url_path.endswith("/api/exportar_csv") or url_path == "/api/exportar_csv":
             try:
                 content_length = int(self.headers.get("Content-Length", 0))
@@ -170,3 +245,70 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
+    def do_PUT(self):
+        url_parts = urllib.parse.urlparse(self.path)
+        url_path = url_parts.path
+
+        # API: Actualizar un albarán en la memoria compartida
+        if url_path.endswith("/api/albaranes") or url_path == "/api/albaranes":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length)
+                payload = json.loads(body.decode("utf-8")) if body else {}
+
+                item = payload.get("item")
+                if item:
+                    updated = storage_manager.update_shared_item(item)
+                    res = {"ok": updated, "items": storage_manager.get_shared_items()}
+                else:
+                    res = {"ok": False, "error": "No se envió el objeto 'item'"}
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                return
+
+        self.send_response(404)
+        self.end_headers()
+
+    def do_DELETE(self):
+        url_parts = urllib.parse.urlparse(self.path)
+        url_path = url_parts.path
+        query = urllib.parse.parse_qs(url_parts.query)
+
+        # API: Eliminar un albarán o vaciar memoria compartida
+        if url_path.endswith("/api/albaranes") or url_path == "/api/albaranes":
+            try:
+                action = query.get("action", [""])[0]
+                item_id = query.get("id", [""])[0]
+
+                if action == "clear_all":
+                    storage_manager.clear_shared_items()
+                    res = {"ok": True, "count": 0, "items": []}
+                elif item_id:
+                    deleted = storage_manager.delete_shared_item(item_id)
+                    res = {"ok": deleted, "items": storage_manager.get_shared_items()}
+                else:
+                    res = {"ok": False, "error": "Falta parámetro 'id' o 'action=clear_all'"}
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                return
+
+        self.send_response(404)
+        self.end_headers()

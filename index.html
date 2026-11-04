@@ -22,8 +22,12 @@
         </div>
       </div>
       <div class="header-badges">
+        <div id="sharedMemoryBadge" class="sync-badge sync-online" title="Memoria compartida multiusuario en tiempo real">
+          <span class="sync-dot"></span>
+          <span id="syncText">Memoria compartida conectada</span>
+          <button type="button" class="sync-refresh-btn" onclick="syncWithSharedMemory(true)" title="Sincronizar ahora con el equipo">🔄</button>
+        </div>
         <span class="badge success" id="statusBadge">● Motor OCR & Estilos Excel Activos</span>
-        <span class="badge">100% Local y Seguro</span>
       </div>
     </header>
 
@@ -137,8 +141,9 @@
     <div class="legend-bar">
       <span class="legend-item"><span class="highlight-sample"></span> <b>Campos en amarillo pastel</b> = Subrayados/resaltados en el albarán original</span>
       <span class="legend-item"><span class="badge success" style="font-size:0.72rem; padding: 2px 7px;">🌐 Traducido</span> = Traducido de portugués a español</span>
-      <span class="legend-item">💾 <b>Almacenamiento Persistente:</b> Los albaranes se guardan en la app y no se van al recargar. Se depuran automáticamente pasados 2 meses.</span>
-      <span class="legend-item">🕒 <b>Ordenados por Fecha/Hora:</b> Las transformaciones más recientes aparecen siempre arriba de todo.</span>
+      <span class="legend-item">👥 <b>Misma Memoria para Todos:</b> Si cualquier usuario añade, edita o elimina albaranes, se sincroniza en tiempo real para todos los compañeros.</span>
+      <span class="legend-item">💾 <b>Auto-limpieza a 2 meses:</b> Los albaranes se depuran automáticamente a los 60 días para mantener la app limpia.</span>
+      <span class="legend-item">🕒 <b>Ordenados por Fecha/Hora:</b> Las transformaciones más recientes aparecen siempre arriba.</span>
     </div>
 
     <!-- ======================================================== -->
@@ -475,6 +480,6 @@
   <!-- Scripts -->
   <script src="lib/pdf.min.js"></script>
   <script src="lib/xlsx.full.min.js"></script>
-  <script src="app.js?v=3.6"></script>
+  <script src="app.js?v=3.7"></script>
 </body>
 </html>

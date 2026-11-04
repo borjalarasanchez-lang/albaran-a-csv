@@ -2,15 +2,18 @@
 Servidor local ultraligero y robusto para la aplicacion Albaran a CSV Pro.
 Procesa archivos PDF digitales y escaneados a traves de extractor.py con soporte OCR.
 Genera archivos Excel (.xlsx) altamente estilizados con xlsxwriter.
+Soporta memoria compartida en tiempo real ("Misma Memoria") multiusuario.
 """
 
 import os
 import sys
 import json
+import re
 import urllib.parse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import extractor
 import generador_excel
+import storage_manager
 
 PORT = 8080
 if len(sys.argv) > 1:
@@ -30,11 +33,50 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         super().end_headers()
 
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def do_GET(self):
+        url_parts = urllib.parse.urlparse(self.path)
+        url_path = url_parts.path
+
+        # API: Obtener albaranes compartidos por todos los usuarios
+        if url_path == "/api/albaranes" or url_path.endswith("/api/albaranes"):
+            try:
+                items = storage_manager.get_shared_items()
+                backend = storage_manager.get_backend_info()
+                res = {
+                    "ok": True,
+                    "items": items,
+                    "count": len(items),
+                    "backend": backend
+                }
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                return
+
+        super().do_GET()
+
     def do_POST(self):
+        url_parts = urllib.parse.urlparse(self.path)
+        url_path = url_parts.path
+
         # 1. API: Extraer datos de PDFs subidos
-        if self.path == "/api/extraer":
+        if url_path == "/api/extraer":
             try:
                 content_type = self.headers.get("Content-Type", "")
                 if "multipart/form-data" in content_type:
@@ -74,7 +116,6 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                             filename_match = None
                             for line in headers_text.splitlines():
                                 if "Content-Disposition:" in line:
-                                    import re
                                     m = re.search(r'filename="([^"]+)"', line)
                                     if m:
                                         filename_match = m.group(1)
@@ -98,9 +139,12 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                                     except Exception:
                                         pass
 
+                    # Guardar automáticamente en la memoria compartida
+                    if results:
+                        storage_manager.add_shared_items(results)
+
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
-                    self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(json.dumps(results, ensure_ascii=False).encode("utf-8"))
                     return
@@ -108,13 +152,48 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 return
 
-        # 2. API: Exportar Excel Estilizado con xlsxwriter
-        elif self.path == "/api/exportar_excel":
+        # 2. API: Almacenamiento Compartido (Añadir / Sincronizar)
+        elif url_path == "/api/albaranes" or url_path.endswith("/api/albaranes"):
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length)
+                payload = json.loads(body.decode("utf-8")) if body else {}
+
+                action = payload.get("action")
+                if action == "clear_all":
+                    storage_manager.clear_shared_items()
+                    res = {"ok": True, "count": 0, "items": []}
+                elif action == "delete":
+                    item_id = payload.get("id")
+                    deleted = storage_manager.delete_shared_item(item_id) if item_id else False
+                    res = {"ok": deleted, "items": storage_manager.get_shared_items()}
+                elif action == "replace_all":
+                    new_items = payload.get("items", [])
+                    storage_manager.save_shared_items(new_items)
+                    res = {"ok": True, "count": len(new_items), "items": new_items}
+                else:
+                    new_items = payload.get("items") or ([payload["item"]] if "item" in payload else [])
+                    updated_list = storage_manager.add_shared_items(new_items)
+                    res = {"ok": True, "count": len(updated_list), "items": updated_list}
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                return
+
+        # 3. API: Exportar Excel Estilizado con xlsxwriter
+        elif url_path == "/api/exportar_excel":
             try:
                 content_length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(content_length)
@@ -132,7 +211,6 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(excel_bytes)
                 return
@@ -140,13 +218,12 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 return
 
-        # 3. API: Exportar CSV codificado en Windows-1252 (ANSI) para que Excel lo abra con tildes perfectas
-        elif self.path == "/api/exportar_csv":
+        # 4. API: Exportar CSV UTF-8
+        elif url_path == "/api/exportar_csv":
             try:
                 content_length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(content_length)
@@ -161,13 +238,11 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                     filename += ".csv"
 
                 csv_text = generador_excel.generar_csv_texto(items, modelo=modelo, tipo=tipo)
-                # UTF-8 con BOM puro (\xef\xbb\xbf) SIN sep=; (sep=; rompe la detección UTF-8 en Excel y genera iconos [][])
                 csv_bytes = b"\xef\xbb\xbf" + csv_text.encode("utf-8")
 
                 self.send_response(200)
                 self.send_header("Content-Type", "text/csv; charset=utf-8")
                 self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(csv_bytes)
                 return
@@ -175,18 +250,78 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 return
 
         super().do_POST()
 
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+    def do_PUT(self):
+        url_parts = urllib.parse.urlparse(self.path)
+        url_path = url_parts.path
+
+        # API: Actualizar un albarán en la memoria compartida
+        if url_path == "/api/albaranes" or url_path.endswith("/api/albaranes"):
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length)
+                payload = json.loads(body.decode("utf-8")) if body else {}
+
+                item = payload.get("item")
+                if item:
+                    updated = storage_manager.update_shared_item(item)
+                    res = {"ok": updated, "items": storage_manager.get_shared_items()}
+                else:
+                    res = {"ok": False, "error": "No se envió el objeto 'item'"}
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                return
+
+        self.send_response(404)
+        self.end_headers()
+
+    def do_DELETE(self):
+        url_parts = urllib.parse.urlparse(self.path)
+        url_path = url_parts.path
+        query = urllib.parse.parse_qs(url_parts.query)
+
+        # API: Eliminar un albarán o vaciar memoria compartida
+        if url_path == "/api/albaranes" or url_path.endswith("/api/albaranes"):
+            try:
+                action = query.get("action", [""])[0]
+                item_id = query.get("id", [""])[0]
+
+                if action == "clear_all":
+                    storage_manager.clear_shared_items()
+                    res = {"ok": True, "count": 0, "items": []}
+                elif item_id:
+                    deleted = storage_manager.delete_shared_item(item_id)
+                    res = {"ok": deleted, "items": storage_manager.get_shared_items()}
+                else:
+                    res = {"ok": False, "error": "Falta parámetro 'id' o 'action=clear_all'"}
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                return
+
+        self.send_response(404)
         self.end_headers()
 
 def run_server(port=PORT):
@@ -196,6 +331,7 @@ def run_server(port=PORT):
     print(f" Servidor iniciado en: http://localhost:{port}")
     print(" Motor OCR de Windows: ACTIVO (Documentos escaneados soportados)")
     print(" Generador Excel Estilizado (xlsxwriter): ACTIVO")
+    print(" Memoria Compartida Multiusuario: ACTIVA (albaranes_compartidos.json)")
     print(" Presiona Ctrl + C para detener el servidor.")
     print("======================================================")
     try:
