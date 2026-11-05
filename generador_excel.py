@@ -26,73 +26,78 @@ def clean_str(val: Any) -> str:
 
 # ==========================================
 # COLUMNAS DETALLE DE PRODUCTOS (LÍNEAS)
+# Organizadas lógicamente: Documento -> Pedido/Producto -> Destino -> Origen/Logística
 # ==========================================
 COLUMNAS_PRODUCTOS_SALTOKI = [
-    ("archivo", "Archivo PDF", 22),
-    ("numero_documento", "Nº Albarán SF", 16),
+    ("archivo", "Archivo PDF", 24),
+    ("numero_documento", "Nº Albarán SF", 18),
     ("prod_pedido", "Nº Pedido Cliente", 18),
     ("prod_linea", "Línea", 8),
     ("prod_codigo", "Código / Ref. Artículo", 18),
     ("prod_codigo_sec", "Código Saltoki", 16),
-    ("prod_descripcion", "Descripción del Producto", 42),
+    ("prod_descripcion", "Descripción del Producto", 45),
     ("prod_cantidad", "Cantidad", 12),
     ("prod_unidad", "Unidad", 12),
     ("fecha_albaran_envio", "Fecha Albarán", 14),
     ("fecha_pedido_cliente", "Fecha Pedido", 14),
+    ("cliente_destinatario", "Cliente / Razón Social", 28),
+    ("cif_cliente", "CIF Cliente", 14),
     ("lugar_descarga", "Lugar Entrega / Descarga", 38),
     ("poblacion_descarga", "Población / CP", 18),
-    ("cliente_destinatario", "Cliente / Razón Social", 28),
     ("direccion_logistico", "Dirección Fiscal", 34),
-    ("cif_cliente", "CIF Cliente", 14),
     ("proveedor_remitente", "Proveedor Remitente", 28)
 ]
 
 COLUMNAS_PRODUCTOS_AQUAFER = [
-    ("archivo", "Archivo PDF", 22),
+    ("archivo", "Archivo PDF", 24),
     ("numero_documento", "Nº Guía Remesa (GREM)", 22),
-    ("numero_cmr", "Nº Carta Porte (CMR)", 16),
+    ("numero_cmr", "Nº Carta Porte (CMR)", 18),
+    ("fecha_albaran_envio", "Fecha Emisión Albarán", 16),
+    ("fecha_expedicion_cmr", "Fecha Expedición CMR", 18),
     ("prod_pedido", "Nº Pedido Cliente", 18),
     ("prod_linea", "Línea", 8),
     ("prod_codigo", "Código Artículo / Ref.", 18),
-    ("prod_descripcion", "Descripción del Producto", 45),
+    ("prod_descripcion", "Descripción del Producto", 48),
     ("prod_cantidad", "Cantidad", 12),
     ("prod_unidad", "Unidad", 12),
-    ("lugar_descarga", "Lugar de Descarga (Entrega)", 36),
-    ("poblacion_descarga", "Población / CP", 18),
-    ("lugar_carga", "Lugar de Carga (Portugal)", 34),
     ("cliente_destinatario", "Cliente Destinatario", 28),
-    ("direccion_logistico", "Dirección Fiscal", 32),
     ("cif_cliente", "NIF Destinatario", 14),
+    ("lugar_descarga", "Lugar de Descarga (Entrega)", 38),
+    ("poblacion_descarga", "Población / CP", 18),
+    ("direccion_logistico", "Dirección Fiscal", 32),
     ("proveedor_remitente", "Proveedor Remitente", 30),
-    ("fecha_albaran_envio", "Fecha Emisión", 15),
+    ("lugar_carga", "Lugar de Carga (Portugal)", 34),
     ("transportista", "Transportista", 26),
-    ("instrucciones_notas", "Notas de Entrega (Español)", 24)
+    ("instrucciones_notas", "Notas de Entrega (Español)", 26)
 ]
 
 COLUMNAS_PRODUCTOS_TODOS = [
-    ("archivo", "Archivo PDF", 22),
+    ("archivo", "Archivo PDF", 24),
     ("modelo", "Empresa / Modelo", 16),
-    ("numero_documento", "Nº Documento / Albarán", 20),
-    ("numero_cmr", "Nº Carta Porte (CMR)", 16),
+    ("numero_documento", "Nº Documento / Albarán", 22),
+    ("numero_cmr", "Nº Carta Porte (CMR)", 18),
+    ("fecha_albaran_envio", "Fecha Albarán / Emisión", 16),
     ("prod_pedido", "Nº Pedido Cliente", 18),
     ("prod_linea", "Línea", 8),
     ("prod_codigo", "Código / Ref. Artículo", 18),
-    ("prod_descripcion", "Descripción del Producto", 42),
+    ("prod_codigo_sec", "Código Secundario", 16),
+    ("prod_descripcion", "Descripción del Producto", 45),
     ("prod_cantidad", "Cantidad", 12),
     ("prod_unidad", "Unidad", 12),
-    ("lugar_descarga", "Lugar Entrega / Descarga", 36),
-    ("poblacion_descarga", "Población / CP", 18),
     ("cliente_destinatario", "Cliente / Destinatario", 28),
-    ("direccion_logistico", "Dirección Fiscal", 32),
     ("cif_cliente", "CIF / NIF", 14),
+    ("lugar_descarga", "Lugar Entrega / Descarga", 38),
+    ("poblacion_descarga", "Población / CP", 18),
+    ("direccion_logistico", "Dirección Fiscal", 32),
     ("proveedor_remitente", "Proveedor Remitente", 28),
-    ("fecha_albaran_envio", "Fecha Albarán / Emisión", 16),
-    ("transportista", "Transportista", 24),
-    ("instrucciones_notas", "Notas de Entrega", 24)
+    ("lugar_carga", "Lugar de Carga (Origen)", 34),
+    ("transportista", "Transportista", 26),
+    ("instrucciones_notas", "Notas de Entrega", 26)
 ]
 
 # ==========================================
-# COLUMNAS RESUMEN CABECERAS
+# COLUMNAS RESUMEN CABECERAS (1 Fila por Albarán)
+# Organizadas lógicamente: Identificación -> Pedidos -> Totales -> Destino -> Origen
 # ==========================================
 COLUMNAS_RESUMEN_SALTOKI = [
     ("archivo", "Archivo PDF", 24),
@@ -102,13 +107,13 @@ COLUMNAS_RESUMEN_SALTOKI = [
     ("fecha_pedido_cliente", "Fecha Pedido", 14),
     ("total_unidades", "Total Unidades", 14),
     ("total_lineas", "Total Líneas", 12),
+    ("mercancia_resumen", "Mercancía / Bultos", 35),
+    ("cliente_destinatario", "Cliente / Razón Social", 28),
+    ("cif_cliente", "CIF Cliente", 14),
     ("lugar_descarga", "Lugar Entrega / Descarga", 38),
     ("poblacion_descarga", "Población / CP", 18),
-    ("cliente_destinatario", "Cliente / Razón Social", 28),
     ("direccion_logistico", "Dirección Fiscal", 34),
-    ("cif_cliente", "CIF Cliente", 14),
-    ("proveedor_remitente", "Proveedor Remitente", 28),
-    ("mercancia_resumen", "Mercancía / Bultos", 35)
+    ("proveedor_remitente", "Proveedor Remitente", 28)
 ]
 
 COLUMNAS_RESUMEN_AQUAFER = [
@@ -116,20 +121,41 @@ COLUMNAS_RESUMEN_AQUAFER = [
     ("numero_documento", "Nº Guía Remesa (GREM)", 22),
     ("numero_cmr", "Nº Carta de Porte (CMR)", 18),
     ("numeros_pedidos", "Nº Pedidos Cliente", 22),
-    ("total_unidades", "Total Unidades", 14),
-    ("total_lineas", "Total Líneas", 12),
-    ("lugar_descarga", "Lugar de Descarga (Entrega)", 36),
-    ("poblacion_descarga", "Población / CP Descarga", 18),
-    ("lugar_carga", "Lugar de Carga (Origen Portugal)", 35),
-    ("cliente_destinatario", "Cliente Destinatario", 28),
-    ("direccion_logistico", "Dirección Fiscal Destinatario", 32),
-    ("cif_cliente", "NIF Destinatario", 14),
-    ("proveedor_remitente", "Proveedor Remitente", 32),
     ("fecha_albaran_envio", "Fecha Emisión Albarán", 16),
     ("fecha_expedicion_cmr", "Fecha Expedición CMR", 18),
+    ("total_unidades", "Total Unidades", 14),
+    ("total_lineas", "Total Líneas", 12),
+    ("mercancia_resumen", "Mercancía Resumen", 32),
+    ("cliente_destinatario", "Cliente Destinatario", 28),
+    ("cif_cliente", "NIF Destinatario", 14),
+    ("lugar_descarga", "Lugar de Descarga (Entrega)", 38),
+    ("poblacion_descarga", "Población / CP Descarga", 18),
+    ("direccion_logistico", "Dirección Fiscal Destinatario", 32),
+    ("proveedor_remitente", "Proveedor Remitente", 32),
+    ("lugar_carga", "Lugar de Carga (Origen Portugal)", 35),
     ("transportista", "Transportista", 28),
-    ("instrucciones_notas", "Notas de Entrega (Español)", 26),
-    ("mercancia_resumen", "Mercancía Resumen", 32)
+    ("instrucciones_notas", "Notas de Entrega (Español)", 26)
+]
+
+COLUMNAS_RESUMEN_TODOS = [
+    ("archivo", "Archivo PDF", 24),
+    ("modelo", "Empresa / Modelo", 16),
+    ("numero_documento", "Nº Documento / Albarán", 22),
+    ("numero_cmr", "Nº Carta Porte (CMR)", 18),
+    ("numeros_pedidos", "Nº Pedidos Cliente", 22),
+    ("fecha_albaran_envio", "Fecha Albarán / Emisión", 16),
+    ("total_unidades", "Total Unidades", 14),
+    ("total_lineas", "Total Líneas", 12),
+    ("mercancia_resumen", "Mercancía Resumen", 32),
+    ("cliente_destinatario", "Cliente Destinatario", 28),
+    ("cif_cliente", "CIF / NIF", 14),
+    ("lugar_descarga", "Lugar Entrega / Descarga", 38),
+    ("poblacion_descarga", "Población / CP", 18),
+    ("direccion_logistico", "Dirección Fiscal", 32),
+    ("proveedor_remitente", "Proveedor Remitente", 30),
+    ("lugar_carga", "Lugar de Carga (Origen)", 34),
+    ("transportista", "Transportista", 26),
+    ("instrucciones_notas", "Notas de Entrega", 26)
 ]
 
 
@@ -389,9 +415,10 @@ def generar_excel_bytes(items: List[Dict[str, Any]], modelo: str = "TODOS") -> b
 
 def generar_csv_texto(items: List[Dict[str, Any]], modelo: str = "TODOS", tipo: str = "detalle") -> str:
   """
-  Genera texto CSV limpio con punto y coma (;).
-  - tipo='detalle' (por defecto): Desglosa cada producto en una fila individual con código, descripción, cantidad y unidad.
-  - tipo='resumen': Genera 1 fila limpia por albarán (sin repetición de datos, igual que en pantalla).
+  Genera texto CSV limpio con punto y coma (;), compatible 100% con Microsoft Excel español/europeo.
+  - Primera línea: sep=; (Excel reconoce directamente el delimitador y no junta todo en la primera columna)
+  - tipo='detalle': Desglosa cada producto en una fila individual con código, descripción, cantidad y unidad.
+  - tipo='resumen': Genera 1 fila limpia por albarán con totales de unidades y líneas.
   """
   if tipo == "detalle":
     rows_data = _expand_items_to_lines(items)
@@ -408,9 +435,9 @@ def generar_csv_texto(items: List[Dict[str, Any]], modelo: str = "TODOS", tipo: 
     elif modelo == "AQUAFER":
       cols = COLUMNAS_RESUMEN_AQUAFER
     else:
-      cols = COLUMNAS_RESUMEN_SALTOKI
+      cols = COLUMNAS_RESUMEN_TODOS
 
-  lines = []
+  lines = ["sep=;"]
   headers = [f'"{label}"' for (_, label, _) in cols]
   lines.append(";".join(headers))
 

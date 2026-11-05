@@ -1303,7 +1303,6 @@ async function extractDataClientSide(file) {
 
     data.campos_resaltados = camposResaltados;
     data.fileObj = file;
-    data.pdfDoc = pdf;
     results.push(data);
   }
 
@@ -1991,14 +1990,172 @@ async function exportSingleItem(id) {
   await downloadStyledExcel([item], item.modelo || 'TODOS', fileName);
 }
 
+// ==========================================
+// COLUMNAS ESTANDARIZADAS PARA EXPORTACIÓN
+// ==========================================
+const COLS_CSV_PRODUCTOS_SALTOKI = [
+  { k: 'archivo', l: 'Archivo PDF', w: 24 },
+  { k: 'numero_documento', l: 'Nº Albarán SF', w: 18 },
+  { k: 'prod_pedido', l: 'Nº Pedido Cliente', w: 18 },
+  { k: 'prod_linea', l: 'Línea', w: 8 },
+  { k: 'prod_codigo', l: 'Código / Ref. Artículo', w: 18 },
+  { k: 'prod_codigo_sec', l: 'Código Saltoki', w: 16 },
+  { k: 'prod_descripcion', l: 'Descripción del Producto', w: 45 },
+  { k: 'prod_cantidad', l: 'Cantidad', w: 12 },
+  { k: 'prod_unidad', l: 'Unidad', w: 12 },
+  { k: 'fecha_albaran_envio', l: 'Fecha Albarán', w: 14 },
+  { k: 'fecha_pedido_cliente', l: 'Fecha Pedido', w: 14 },
+  { k: 'cliente_destinatario', l: 'Cliente / Razón Social', w: 28 },
+  { k: 'cif_cliente', l: 'CIF Cliente', w: 14 },
+  { k: 'lugar_descarga', l: 'Lugar Entrega / Descarga', w: 38 },
+  { k: 'poblacion_descarga', l: 'Población / CP', w: 18 },
+  { k: 'direccion_logistico', l: 'Dirección Fiscal', w: 34 },
+  { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 28 }
+];
+
+const COLS_CSV_PRODUCTOS_AQUAFER = [
+  { k: 'archivo', l: 'Archivo PDF', w: 24 },
+  { k: 'numero_documento', l: 'Nº Guía Remesa (GREM)', w: 22 },
+  { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)', w: 18 },
+  { k: 'fecha_albaran_envio', l: 'Fecha Emisión Albarán', w: 16 },
+  { k: 'fecha_expedicion_cmr', l: 'Fecha Expedición CMR', w: 18 },
+  { k: 'prod_pedido', l: 'Nº Pedido Cliente', w: 18 },
+  { k: 'prod_linea', l: 'Línea', w: 8 },
+  { k: 'prod_codigo', l: 'Código Artículo / Ref.', w: 18 },
+  { k: 'prod_descripcion', l: 'Descripción del Producto', w: 48 },
+  { k: 'prod_cantidad', l: 'Cantidad', w: 12 },
+  { k: 'prod_unidad', l: 'Unidad', w: 12 },
+  { k: 'cliente_destinatario', l: 'Cliente Destinatario', w: 28 },
+  { k: 'cif_cliente', l: 'NIF Destinatario', w: 14 },
+  { k: 'lugar_descarga', l: 'Lugar de Descarga (Entrega)', w: 38 },
+  { k: 'poblacion_descarga', l: 'Población / CP', w: 18 },
+  { k: 'direccion_logistico', l: 'Dirección Fiscal', w: 32 },
+  { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 30 },
+  { k: 'lugar_carga', l: 'Lugar de Carga (Portugal)', w: 34 },
+  { k: 'transportista', l: 'Transportista', w: 26 },
+  { k: 'instrucciones_notas', l: 'Notas de Entrega (Español)', w: 26 }
+];
+
+const COLS_CSV_PRODUCTOS_TODOS = [
+  { k: 'archivo', l: 'Archivo PDF', w: 24 },
+  { k: 'modelo', l: 'Empresa / Modelo', w: 16 },
+  { k: 'numero_documento', l: 'Nº Documento / Albarán', w: 22 },
+  { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)', w: 18 },
+  { k: 'fecha_albaran_envio', l: 'Fecha Albarán / Emisión', w: 16 },
+  { k: 'prod_pedido', l: 'Nº Pedido Cliente', w: 18 },
+  { k: 'prod_linea', l: 'Línea', w: 8 },
+  { k: 'prod_codigo', l: 'Código / Ref. Artículo', w: 18 },
+  { k: 'prod_codigo_sec', l: 'Código Secundario', w: 16 },
+  { k: 'prod_descripcion', l: 'Descripción del Producto', w: 45 },
+  { k: 'prod_cantidad', l: 'Cantidad', w: 12 },
+  { k: 'prod_unidad', l: 'Unidad', w: 12 },
+  { k: 'cliente_destinatario', l: 'Cliente / Destinatario', w: 28 },
+  { k: 'cif_cliente', l: 'CIF / NIF', w: 14 },
+  { k: 'lugar_descarga', l: 'Lugar Entrega / Descarga', w: 38 },
+  { k: 'poblacion_descarga', l: 'Población / CP', w: 18 },
+  { k: 'direccion_logistico', l: 'Dirección Fiscal', w: 32 },
+  { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 28 },
+  { k: 'lugar_carga', l: 'Lugar de Carga (Origen)', w: 34 },
+  { k: 'transportista', l: 'Transportista', w: 26 },
+  { k: 'instrucciones_notas', l: 'Notas de Entrega', w: 26 }
+];
+
+const COLS_CSV_RESUMEN_SALTOKI = [
+  { k: 'archivo', l: 'Archivo PDF', w: 24 },
+  { k: 'numero_documento', l: 'Nº Albarán SF', w: 18 },
+  { k: 'numeros_pedidos', l: 'Nº Pedido Cliente', w: 18 },
+  { k: 'fecha_albaran_envio', l: 'Fecha Albarán', w: 14 },
+  { k: 'fecha_pedido_cliente', l: 'Fecha Pedido', w: 14 },
+  { k: 'total_unidades', l: 'Total Unidades', w: 14 },
+  { k: 'total_lineas', l: 'Total Líneas', w: 12 },
+  { k: 'mercancia_resumen', l: 'Mercancía / Bultos', w: 35 },
+  { k: 'cliente_destinatario', l: 'Cliente / Razón Social', w: 28 },
+  { k: 'cif_cliente', l: 'CIF Cliente', w: 14 },
+  { k: 'lugar_descarga', l: 'Lugar Entrega / Descarga', w: 38 },
+  { k: 'poblacion_descarga', l: 'Población / CP', w: 18 },
+  { k: 'direccion_logistico', l: 'Dirección Fiscal', w: 34 },
+  { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 28 }
+];
+
+const COLS_CSV_RESUMEN_AQUAFER = [
+  { k: 'archivo', l: 'Archivo PDF', w: 24 },
+  { k: 'numero_documento', l: 'Nº Guía Remesa (GREM)', w: 22 },
+  { k: 'numero_cmr', l: 'Nº Carta de Porte (CMR)', w: 18 },
+  { k: 'numeros_pedidos', l: 'Nº Pedidos Cliente', w: 22 },
+  { k: 'fecha_albaran_envio', l: 'Fecha Emisión Albarán', w: 16 },
+  { k: 'fecha_expedicion_cmr', l: 'Fecha Expedición CMR', w: 18 },
+  { k: 'total_unidades', l: 'Total Unidades', w: 14 },
+  { k: 'total_lineas', l: 'Total Líneas', w: 12 },
+  { k: 'mercancia_resumen', l: 'Mercancía Resumen', w: 32 },
+  { k: 'cliente_destinatario', l: 'Cliente Destinatario', w: 28 },
+  { k: 'cif_cliente', l: 'NIF Destinatario', w: 14 },
+  { k: 'lugar_descarga', l: 'Lugar de Descarga (Entrega)', w: 38 },
+  { k: 'poblacion_descarga', l: 'Población / CP Descarga', w: 18 },
+  { k: 'direccion_logistico', l: 'Dirección Fiscal Destinatario', w: 32 },
+  { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 32 },
+  { k: 'lugar_carga', l: 'Lugar de Carga (Origen Portugal)', w: 35 },
+  { k: 'transportista', l: 'Transportista', w: 28 },
+  { k: 'instrucciones_notas', l: 'Notas de Entrega (Español)', w: 26 }
+];
+
+const COLS_CSV_RESUMEN_TODOS = [
+  { k: 'archivo', l: 'Archivo PDF', w: 24 },
+  { k: 'modelo', l: 'Empresa / Modelo', w: 16 },
+  { k: 'numero_documento', l: 'Nº Documento / Albarán', w: 22 },
+  { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)', w: 18 },
+  { k: 'numeros_pedidos', l: 'Nº Pedidos Cliente', w: 22 },
+  { k: 'fecha_albaran_envio', l: 'Fecha Albarán / Emisión', w: 16 },
+  { k: 'total_unidades', l: 'Total Unidades', w: 14 },
+  { k: 'total_lineas', l: 'Total Líneas', w: 12 },
+  { k: 'mercancia_resumen', l: 'Mercancía Resumen', w: 32 },
+  { k: 'cliente_destinatario', l: 'Cliente Destinatario', w: 28 },
+  { k: 'cif_cliente', l: 'CIF / NIF', w: 14 },
+  { k: 'lugar_descarga', l: 'Lugar Entrega / Descarga', w: 38 },
+  { k: 'poblacion_descarga', l: 'Población / CP', w: 18 },
+  { k: 'direccion_logistico', l: 'Dirección Fiscal', w: 32 },
+  { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 30 },
+  { k: 'lugar_carga', l: 'Lugar de Carga (Origen)', w: 34 },
+  { k: 'transportista', l: 'Transportista', w: 26 },
+  { k: 'instrucciones_notas', l: 'Notas de Entrega', w: 26 }
+];
+
+// Helper para limpiar objetos antes de convertirlos a JSON (evita errores de circularidad)
+function sanitizeItemsForJson(items) {
+  if (!items || !Array.isArray(items)) return [];
+  return items.map(item => {
+    const clean = {};
+    for (const [key, val] of Object.entries(item)) {
+      if (key === 'fileObj' || key === 'pdfDoc' || key.startsWith('_dom') || typeof val === 'function') {
+        continue;
+      }
+      if (key === 'lineas_productos' && Array.isArray(val)) {
+        clean.lineas_productos = val.map(l => {
+          const cl = {};
+          for (const [lk, lv] of Object.entries(l)) {
+            if (typeof lv !== 'function' && !lk.startsWith('_')) {
+              cl[lk] = lv;
+            }
+          }
+          return cl;
+        });
+      } else {
+        clean[key] = val;
+      }
+    }
+    return clean;
+  });
+}
+
 async function downloadStyledExcel(items, modelo, filename) {
   showToast(`⏳ Generando Excel completo con todos los productos, pedidos y cantidades...`);
   
+  const sanitized = sanitizeItemsForJson(items);
+
   try {
     const response = await fetch('/api/exportar_excel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items, modelo, filename })
+      body: JSON.stringify({ items: sanitized, modelo, filename })
     });
 
     if (response.ok) {
@@ -2015,26 +2172,60 @@ async function downloadStyledExcel(items, modelo, filename) {
       return;
     }
   } catch (err) {
-    console.warn('Servidor local de exportación no disponible, generando fallback SheetJS:', err);
+    console.warn('Servidor de exportación no disponible, generando fallback estructurado SheetJS:', err);
   }
 
-  // Fallback con SheetJS en el cliente si el servidor falla
+  // Fallback con SheetJS en el cliente si el servidor no responde:
+  // Crear hojas bonitas con nombres de columnas en español, anchos y dos hojas
   if (typeof XLSX !== 'undefined') {
-    const expanded = expandItemsToProductLines(items);
-    const ws = XLSX.utils.json_to_sheet(expanded);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Detalle Productos");
+    const expanded = expandItemsToProductLines(sanitized);
+
+    let colsDet, colsRes;
+    if (modelo === 'SALTOKI') {
+      colsDet = COLS_CSV_PRODUCTOS_SALTOKI;
+      colsRes = COLS_CSV_RESUMEN_SALTOKI;
+    } else if (modelo === 'AQUAFER') {
+      colsDet = COLS_CSV_PRODUCTOS_AQUAFER;
+      colsRes = COLS_CSV_RESUMEN_AQUAFER;
+    } else {
+      colsDet = COLS_CSV_PRODUCTOS_TODOS;
+      colsRes = COLS_CSV_RESUMEN_TODOS;
+    }
+
+    // Hoja 1: Detalle Completo
+    const detailData = expanded.map(row => {
+      const mapped = {};
+      colsDet.forEach(c => { mapped[c.l] = row[c.k] || '-'; });
+      return mapped;
+    });
+    const ws1 = XLSX.utils.json_to_sheet(detailData);
+    ws1['!cols'] = colsDet.map(c => ({ wch: c.w || 22 }));
+    XLSX.utils.book_append_sheet(wb, ws1, "Detalle Completo");
+
+    // Hoja 2: Resumen Albaranes
+    const resData = sanitized.map(row => {
+      const mapped = {};
+      colsRes.forEach(c => { mapped[c.l] = row[c.k] || '-'; });
+      return mapped;
+    });
+    const ws2 = XLSX.utils.json_to_sheet(resData);
+    ws2['!cols'] = colsRes.map(c => ({ wch: c.w || 22 }));
+    XLSX.utils.book_append_sheet(wb, ws2, "Resumen Albaranes");
+
     XLSX.writeFile(wb, filename);
     showToast(`📊 Excel descargado: ${filename}`);
   }
 }
 
 async function downloadCsv(items, modelo, filename, tipo = 'detalle') {
+  const sanitized = sanitizeItemsForJson(items);
+
   try {
     const response = await fetch('/api/exportar_csv', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items, modelo, filename, tipo })
+      body: JSON.stringify({ items: sanitized, modelo, filename, tipo })
     });
 
     if (response.ok) {
@@ -2058,128 +2249,15 @@ async function downloadCsv(items, modelo, filename, tipo = 'detalle') {
   let rowsData;
 
   if (tipo === 'detalle') {
-    rowsData = expandItemsToProductLines(items);
-    if (modelo === 'SALTOKI') {
-      cols = [
-        { k: 'archivo', l: 'Archivo PDF' },
-        { k: 'numero_documento', l: 'Nº Albarán SF' },
-        { k: 'prod_pedido', l: 'Nº Pedido Cliente' },
-        { k: 'prod_linea', l: 'Línea' },
-        { k: 'prod_codigo', l: 'Código / Ref. Artículo' },
-        { k: 'prod_codigo_sec', l: 'Código Saltoki' },
-        { k: 'prod_descripcion', l: 'Descripción del Producto' },
-        { k: 'prod_cantidad', l: 'Cantidad' },
-        { k: 'prod_unidad', l: 'Unidad' },
-        { k: 'fecha_albaran_envio', l: 'Fecha Albarán' },
-        { k: 'fecha_pedido_cliente', l: 'Fecha Pedido' },
-        { k: 'lugar_descarga', l: 'Lugar Entrega / Descarga' },
-        { k: 'poblacion_descarga', l: 'Población / CP' },
-        { k: 'cliente_destinatario', l: 'Cliente / Razón Social' },
-        { k: 'direccion_logistico', l: 'Dirección Fiscal' },
-        { k: 'cif_cliente', l: 'CIF Cliente' },
-        { k: 'proveedor_remitente', l: 'Proveedor Remitente' }
-      ];
-    } else if (modelo === 'AQUAFER') {
-      cols = [
-        { k: 'archivo', l: 'Archivo PDF' },
-        { k: 'numero_documento', l: 'Nº Guía Remesa (GREM)' },
-        { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)' },
-        { k: 'prod_pedido', l: 'Nº Pedido Cliente' },
-        { k: 'prod_linea', l: 'Línea' },
-        { k: 'prod_codigo', l: 'Código Artículo / Ref.' },
-        { k: 'prod_descripcion', l: 'Descripción del Producto' },
-        { k: 'prod_cantidad', l: 'Cantidad' },
-        { k: 'prod_unidad', l: 'Unidad' },
-        { k: 'lugar_descarga', l: 'Lugar de Descarga (Entrega)' },
-        { k: 'poblacion_descarga', l: 'Población / CP' },
-        { k: 'lugar_carga', l: 'Lugar de Carga (Portugal)' },
-        { k: 'cliente_destinatario', l: 'Cliente Destinatario' },
-        { k: 'direccion_logistico', l: 'Dirección Fiscal' },
-        { k: 'cif_cliente', l: 'NIF Destinatario' },
-        { k: 'proveedor_remitente', l: 'Proveedor Remitente' },
-        { k: 'fecha_albaran_envio', l: 'Fecha Emisión' },
-        { k: 'transportista', l: 'Transportista' },
-        { k: 'instrucciones_notas', l: 'Notas de Entrega (Español)' }
-      ];
-    } else {
-      cols = [
-        { k: 'archivo', l: 'Archivo PDF' },
-        { k: 'modelo', l: 'Modelo' },
-        { k: 'numero_documento', l: 'Nº Documento / Albarán' },
-        { k: 'numero_cmr', l: 'Nº CMR' },
-        { k: 'prod_pedido', l: 'Nº Pedido Cliente' },
-        { k: 'prod_linea', l: 'Línea' },
-        { k: 'prod_codigo', l: 'Código / Ref. Artículo' },
-        { k: 'prod_descripcion', l: 'Descripción del Producto' },
-        { k: 'prod_cantidad', l: 'Cantidad' },
-        { k: 'prod_unidad', l: 'Unidad' },
-        { k: 'lugar_descarga', l: 'Lugar Descarga' },
-        { k: 'poblacion_descarga', l: 'Población / CP' },
-        { k: 'cliente_destinatario', l: 'Cliente Destinatario' },
-        { k: 'direccion_logistico', l: 'Dirección Fiscal' },
-        { k: 'cif_cliente', l: 'CIF / NIF' },
-        { k: 'proveedor_remitente', l: 'Proveedor' },
-        { k: 'fecha_albaran_envio', l: 'Fecha Albarán' },
-        { k: 'fecha_pedido_cliente', l: 'Fecha Pedido' },
-        { k: 'transportista', l: 'Transportista' },
-        { k: 'instrucciones_notas', l: 'Notas Entrega' }
-      ];
-    }
+    rowsData = expandItemsToProductLines(sanitized);
+    if (modelo === 'SALTOKI') cols = COLS_CSV_PRODUCTOS_SALTOKI;
+    else if (modelo === 'AQUAFER') cols = COLS_CSV_PRODUCTOS_AQUAFER;
+    else cols = COLS_CSV_PRODUCTOS_TODOS;
   } else {
-    rowsData = items;
-    if (modelo === 'SALTOKI') {
-      cols = [
-        { k: 'archivo', l: 'Archivo PDF' },
-        { k: 'numero_documento', l: 'Nº Albarán SF' },
-        { k: 'numeros_pedidos', l: 'Nº Pedido Cliente' },
-        { k: 'fecha_albaran_envio', l: 'Fecha Albarán' },
-        { k: 'fecha_pedido_cliente', l: 'Fecha Pedido' },
-        { k: 'lugar_descarga', l: 'Lugar Entrega / Descarga' },
-        { k: 'poblacion_descarga', l: 'Población / CP' },
-        { k: 'cliente_destinatario', l: 'Cliente / Razón Social' },
-        { k: 'direccion_logistico', l: 'Dirección Fiscal' },
-        { k: 'cif_cliente', l: 'CIF Cliente' },
-        { k: 'proveedor_remitente', l: 'Proveedor Remitente' },
-        { k: 'mercancia_resumen', l: 'Mercancía / Bultos' }
-      ];
-    } else if (modelo === 'AQUAFER') {
-      cols = [
-        { k: 'archivo', l: 'Archivo PDF' },
-        { k: 'numero_documento', l: 'Nº Guía Remesa (GREM)' },
-        { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)' },
-        { k: 'numeros_pedidos', l: 'Nº Pedidos Cliente' },
-        { k: 'lugar_descarga', l: 'Lugar Descarga (Entrega)' },
-        { k: 'poblacion_descarga', l: 'Población / CP' },
-        { k: 'lugar_carga', l: 'Lugar Carga (Origen Portugal)' },
-        { k: 'cliente_destinatario', l: 'Cliente Destinatario' },
-        { k: 'direccion_logistico', l: 'Dirección Destinatario' },
-        { k: 'cif_cliente', l: 'NIF Destinatario' },
-        { k: 'proveedor_remitente', l: 'Proveedor Remitente' },
-        { k: 'fecha_albaran_envio', l: 'Fecha Emisión Albarán' },
-        { k: 'fecha_expedicion_cmr', l: 'Fecha Expedición CMR' },
-        { k: 'transportista', l: 'Transportista' },
-        { k: 'instrucciones_notas', l: 'Notas Entrega (Español)' },
-        { k: 'mercancia_resumen', l: 'Mercancía Resumen' }
-      ];
-    } else {
-      cols = [
-        { k: 'archivo', l: 'Archivo PDF' },
-        { k: 'modelo', l: 'Modelo' },
-        { k: 'numero_documento', l: 'Nº Documento / Albarán' },
-        { k: 'numero_cmr', l: 'Nº CMR' },
-        { k: 'numeros_pedidos', l: 'Nº Pedidos' },
-        { k: 'lugar_descarga', l: 'Lugar Descarga' },
-        { k: 'poblacion_descarga', l: 'Población / CP' },
-        { k: 'cliente_destinatario', l: 'Cliente Destinatario' },
-        { k: 'direccion_logistico', l: 'Dirección Fiscal' },
-        { k: 'cif_cliente', l: 'CIF / NIF' },
-        { k: 'proveedor_remitente', l: 'Proveedor' },
-        { k: 'fecha_albaran_envio', l: 'Fecha Albarán' },
-        { k: 'fecha_pedido_cliente', l: 'Fecha Pedido' },
-        { k: 'transportista', l: 'Transportista' },
-        { k: 'instrucciones_notas', l: 'Notas Entrega' }
-      ];
-    }
+    rowsData = sanitized;
+    if (modelo === 'SALTOKI') cols = COLS_CSV_RESUMEN_SALTOKI;
+    else if (modelo === 'AQUAFER') cols = COLS_CSV_RESUMEN_AQUAFER;
+    else cols = COLS_CSV_RESUMEN_TODOS;
   }
 
   const rows = [];
@@ -2194,7 +2272,7 @@ async function downloadCsv(items, modelo, filename, tipo = 'detalle') {
     rows.push(row.join(';'));
   });
 
-  const csvContent = '\uFEFF' + rows.join('\r\n');
+  const csvContent = '\uFEFFsep=;\r\n' + rows.join('\r\n') + '\r\n';
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
