@@ -13,6 +13,8 @@ import csv
 import json
 import argparse
 import asyncio
+import time
+import random
 from typing import Dict, List, Any, Optional
 
 import pypdf
@@ -331,7 +333,10 @@ def parse_albaran(
     # Campos que están resaltados con fluorescente o subrayados en el original
     campos_resaltados = []
 
+    now_ts = int(time.time() * 1000)
     data = {
+        "_id": f"item_{now_ts}_{sub_idx}_{random.randint(1000, 9999)}",
+        "_timestamp": now_ts,
         "archivo": os.path.basename(filename),
         "nombre_archivo_origen": os.path.basename(filename),
         "pagina_inicio": pagina_inicio,
@@ -456,11 +461,13 @@ def parse_albaran(
             campos_resaltados.append("numeros_pedidos")
 
         # Cliente Destinatario y CIF extraídos del documento original
-        m_cli = re.search(r'(APEP\s+GROUP[^\n\r]+|SALTOKI\s+LOGISTICO[^\n\r]+|[A-ZÁÉÍÓÚÑ\s]{4,60}\b(?:SLU|SL|SA)\b)', text, re.IGNORECASE)
+        m_cli = re.search(r'Exmo\.\/a\(s\)\s+Sr\.\/a\(s\)[\s\S]{1,150}?([A-Z0-9\s.,-]+(?:SLU|SL|SA|SAU|ZARAGOZA))', text, re.IGNORECASE)
         if not m_cli:
-            m_cli = re.search(r'(APEP\s+GROUP[^\n\r]+|SALTOKI\s+LOG[^\n\r]+)', text, re.IGNORECASE)
+            m_cli = re.search(r'(APEP\s+GROUP[^\n\r]+|SALTOKI\s+LOG[IÍ]STIC[AO][^\n\r]+)', text, re.IGNORECASE)
+        if not m_cli:
+            m_cli = re.search(r'\b(SALTOKI[^\n\r]+)', text, re.IGNORECASE)
         if m_cli:
-            data["cliente_destinatario"] = clean_val(m_cli.group(1))
+            data["cliente_destinatario"] = clean_val(m_cli.group(1)).replace("Exmo./a(s) Sr./a(s)", "").strip()
         else:
             data["cliente_destinatario"] = "SALTOKI LOGÍSTICA ZARAGOZA, SA"
 
@@ -719,18 +726,20 @@ def extract_albaran_data(pdf_path: str, filename: Optional[str] = None) -> List[
     current_pages = []
 
     for p_idx, p_txt in enumerate(pages_text):
-        is_pure_cmr = bool(re.search(r'DECLARA[CÇ][AÃ]O DE EXPEDI[CÇ][AÃ]O|LETTRE DE VOITURE', p_txt, re.IGNORECASE)) and not bool(re.search(r'GUIA DE REMESSA|GREM|ESTE DOCUMENTO NÃo SERVE DE FATURA', p_txt, re.IGNORECASE))
+        is_pure_cmr = bool(re.search(r'DECLARA[CÇ][AÃ]O DE EXPEDI[CÇ][AÃ]O|LETTRE DE VOITURE|\bC\.?M\.?R\.?\s*N[ºO]', p_txt, re.IGNORECASE)) and not bool(re.search(r'ESTE DOCUMENTO NÃo SERVE DE FATURA|C[óo]d\.?\s*Artigo', p_txt, re.IGNORECASE))
         if is_pure_cmr and len(pages_text) > 1:
             continue
 
         m_grem = re.search(r'(?:GUIA DE REMESSA|GREM|GUIA DE TRANSPORTE)[\s\r\n]+([A-Z0-9]+[\s\-/]+[A-Z0-9\-/]+|[A-Z0-9\-/]{4,})', p_txt, re.IGNORECASE)
         doc_id = None
         if m_grem and not re.match(r'^(DATA|FECHA|PAG|CLIENTE|BANCOS)', m_grem.group(1), re.IGNORECASE):
-            doc_id = clean_val(m_grem.group(1))
+            raw_id = clean_val(m_grem.group(1))
+            doc_id = re.sub(r'^(GREM|GUIA\s+DE\s+REMESSA|GUIA\s+DE\s+TRANSPORTE)[\s\:\-]+', '', raw_id, flags=re.IGNORECASE).strip()
         else:
             m_sf = re.search(r'\b(SF\s*\d{6,10}|SF-\d{6,10})\b', p_txt)
             if m_sf:
-                doc_id = clean_val(m_sf.group(1))
+                raw_id = clean_val(m_sf.group(1))
+                doc_id = re.sub(r'^(SF)[\s\:\-]+', 'SF ', raw_id, flags=re.IGNORECASE).strip()
 
         if doc_id:
             if current_doc_id is None:
@@ -944,12 +953,13 @@ def main():
         print(f"No se encontraron archivos PDF en: {args.origen}")
         sys.exit(0)
 
-    print(f"Extrayendo {len(pdf_files)} albarán(es)...")
+    print(f"Extrayendo {len(pdf_files)} archivo(s) PDF...")
     results = []
     for p in pdf_files:
-        data = extract_albaran_data(p)
-        results.append(data)
-        print(f" - [{data['modelo']}] {data['archivo']} -> {data['numero_documento']} (Pedidos: {data['numeros_pedidos']})")
+        items = extract_albaran_data(p)
+        for it in items:
+            results.append(it)
+            print(f" - [{it.get('modelo', 'Doc')}] {it.get('archivo')} -> {it.get('numero_documento')} (Pedidos: {it.get('numeros_pedidos')})")
 
     filtro = None if args.modelo == "TODOS" else args.modelo
     export_to_csv(results, args.csv, delimiter=args.sep, modelo_filtro=filtro)

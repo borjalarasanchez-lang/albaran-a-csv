@@ -839,6 +839,11 @@ function ensureItemDefaults(item) {
 
   // La fecha de vencimiento se omite por petición de dirección
   item.fecha_vencimiento = '';
+
+  // Identificador único garantizado
+  if (!item._id) {
+    item._id = 'item_' + (item._timestamp || Date.now()) + '_' + Math.random().toString(36).substr(2, 6);
+  }
   
   // Registro de Fecha y Hora de transformación para orden cronológico
   if (!item._timestamp) {
@@ -1015,7 +1020,7 @@ async function extractDataClientSide(file) {
 
   for (let pIdx = 0; pIdx < pagesText.length; pIdx++) {
     const pTxt = pagesText[pIdx];
-    const isPureCmr = /DECLARA[CÇ][AÃ]O\s+DE\s+EXPEDI[CÇ][AÃ]O|LETTRE\s+DE\s+VOITURE/i.test(pTxt) && !/GUIA\s+DE\s+REMESSA|GREM|ESTE\s+DOCUMENTO/i.test(pTxt);
+    const isPureCmr = /DECLARA[CÇ][AÃ]O\s+DE\s+EXPEDI[CÇ][AÃ]O|LETTRE\s+DE\s+VOITURE|\bC\.?M\.?R\.?\s*N[ºO]/i.test(pTxt) && !/ESTE\s+DOCUMENTO\s+N[ÃA]O\s+SERVE\s+DE\s+FATURA|C[óo]d\.?\s*Artigo/i.test(pTxt);
     if (isPureCmr && pagesText.length > 1) {
       continue;
     }
@@ -1023,10 +1028,14 @@ async function extractDataClientSide(file) {
     const mGrem = pTxt.match(/(?:GUIA\s+DE\s+REMESSA|GREM|GUIA\s+DE\s+TRANSPORTE)[\s\r\n]+([A-Z0-9]+[\s\-/]+[A-Z0-9\-/]+|[A-Z0-9\-/]{4,})/i);
     let docId = null;
     if (mGrem && !/^(DATA|FECHA|PAG|CLIENTE|BANCOS)/i.test(mGrem[1])) {
-      docId = cleanStr(mGrem[1]);
+      const rawId = cleanStr(mGrem[1]);
+      docId = rawId.replace(/^(GREM|GUIA\s+DE\s+REMESSA|GUIA\s+DE\s+TRANSPORTE)[\s:\-]+/i, '').trim();
     } else {
       const mSf = pTxt.match(/\b(SF\s*\d{6,10}|SF-\d{6,10})\b/i);
-      if (mSf) docId = cleanStr(mSf[1]);
+      if (mSf) {
+        const rawId = cleanStr(mSf[1]);
+        docId = rawId.replace(/^(SF)[\s:\-]+/i, 'SF ').trim();
+      }
     }
 
     if (docId) {
@@ -1472,7 +1481,7 @@ function renderSaltokiRows(items) {
       <td style="text-align: center;">
         <div class="action-btns">
           <button class="icon-btn download-btn" title="Descargar este albarán en Excel (${escapeHtml(item.nombre_archivo_sugerido)}.xlsx)" onclick="exportSingleItem('${item._id}')">📥</button>
-          <button class="icon-btn" title="Ver documento PDF y editar campos" onclick="openPdfModal(${origIdx})">👁️</button>
+          <button class="icon-btn" title="Ver documento PDF y editar campos" onclick="openPdfModal('${item._id}')">👁️</button>
           <button class="icon-btn delete" title="Eliminar fila" onclick="deleteItem('${item._id}')">🗑️</button>
         </div>
       </td>
@@ -1555,7 +1564,7 @@ function renderSaltokiRows(items) {
                 📦 ${item.total_unidades || (item.lineas_productos ? item.lineas_productos.reduce((acc, l) => acc + (Number(l.cantidad) || 1), 0) : 5)} Unidades (${item.lineas_productos ? item.lineas_productos.length : 2} arts.)
               </span>
               ${item.lineas_productos && item.lineas_productos.length > 0 ? `
-                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.7rem; border-color: rgba(56, 189, 248, 0.4);" onclick="openPdfModal(${origIdx})">
+                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.7rem; border-color: rgba(56, 189, 248, 0.4);" onclick="openPdfModal('${item._id}')">
                   📦 Ver ${item.lineas_productos.length} productos
                 </button>
               ` : ''}
@@ -1593,7 +1602,7 @@ function renderAquaferRows(items) {
       <td style="text-align: center;">
         <div class="action-btns">
           <button class="icon-btn download-btn" title="Descargar este albarán en Excel (${escapeHtml(item.nombre_archivo_sugerido)}.xlsx)" onclick="exportSingleItem('${item._id}')">📥</button>
-          <button class="icon-btn" title="Ver documento PDF y editar campos" onclick="openPdfModal(${origIdx})">👁️</button>
+          <button class="icon-btn" title="Ver documento PDF y editar campos" onclick="openPdfModal('${item._id}')">👁️</button>
           <button class="icon-btn delete" title="Eliminar fila" onclick="deleteItem('${item._id}')">🗑️</button>
         </div>
       </td>
@@ -1695,7 +1704,7 @@ function renderAquaferRows(items) {
                 📦 ${item.total_unidades || (item.lineas_productos ? item.lineas_productos.reduce((acc, l) => acc + (Number(l.cantidad) || 1), 0) : 103)} Unidades (${item.lineas_productos ? item.lineas_productos.length : 15} arts.)
               </span>
               ${item.lineas_productos && item.lineas_productos.length > 0 ? `
-                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.7rem; border-color: rgba(52, 211, 153, 0.4);" onclick="openPdfModal(${origIdx})">
+                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.7rem; border-color: rgba(52, 211, 153, 0.4);" onclick="openPdfModal('${item._id}')">
                   📦 Ver ${item.lineas_productos.length} productos
                 </button>
               ` : ''}
@@ -1733,7 +1742,7 @@ function renderAllRows(items) {
       <td style="text-align: center;">
         <div class="action-btns">
           <button class="icon-btn download-btn" title="Descargar individual (${escapeHtml(item.nombre_archivo_sugerido)}.xlsx)" onclick="exportSingleItem('${item._id}')">📥</button>
-          <button class="icon-btn" title="Ver documento PDF" onclick="openPdfModal(${origIdx})">👁️</button>
+          <button class="icon-btn" title="Ver documento PDF" onclick="openPdfModal('${item._id}')">👁️</button>
           <button class="icon-btn delete" title="Eliminar fila" onclick="deleteItem('${item._id}')">🗑️</button>
         </div>
       </td>
@@ -1833,7 +1842,7 @@ function renderAllRows(items) {
                 📦 ${item.total_unidades || (item.lineas_productos ? item.lineas_productos.reduce((acc, l) => acc + (Number(l.cantidad) || 1), 0) : '')} Unidades (${item.lineas_productos ? item.lineas_productos.length : 0} arts.)
               </span>
               ${item.lineas_productos && item.lineas_productos.length > 0 ? `
-                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.7rem; border-color: rgba(148,163,184,0.4);" onclick="openPdfModal(${origIdx})">
+                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.7rem; border-color: rgba(148,163,184,0.4);" onclick="openPdfModal('${item._id}')">
                   📦 Ver ${item.lineas_productos.length} productos
                 </button>
               ` : ''}
@@ -2286,8 +2295,8 @@ async function downloadCsv(items, modelo, filename, tipo = 'detalle') {
 }
 
 function deleteItem(id) {
-  const baseId = id.split('_p')[0].split('_')[0];
-  const idx = extractedItems.findIndex(it => it._id === id || it._id === baseId || it._id.startsWith(baseId));
+  if (!id) return;
+  const idx = extractedItems.findIndex(it => it._id === id);
   if (idx !== -1) {
     const itemToDelete = extractedItems[idx];
     selectedItemIds.delete(id);
@@ -2346,10 +2355,18 @@ async function loadSamplePdfs() {
 // ==========================================
 // VISOR MODAL
 // ==========================================
-async function openPdfModal(index) {
-  currentPreviewIndex = index;
-  const item = extractedItems[index];
+async function openPdfModal(target) {
+  let index = -1;
+  let item = null;
+  if (typeof target === 'string') {
+    index = extractedItems.findIndex(it => it._id === target);
+    if (index !== -1) item = extractedItems[index];
+  } else if (typeof target === 'number' && target >= 0 && target < extractedItems.length) {
+    index = target;
+    item = extractedItems[index];
+  }
   if (!item) return;
+  currentPreviewIndex = index;
 
   modalFilename.textContent = item.archivo;
   modalDocType.textContent = item.tipo_documento || 'Documento Logístico';
@@ -2432,6 +2449,7 @@ function syncModalToItem() {
     item.lista_pedidos = item.numeros_pedidos.split(',').map(s => s.trim()).filter(Boolean);
   }
   saveAllToStorage();
+  updateInSharedMemory(item);
 }
 
 function closePdfModal() {

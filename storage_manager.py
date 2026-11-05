@@ -10,6 +10,7 @@ Permite que todos los usuarios compartan la misma base de albaranes en tiempo re
 import os
 import json
 import time
+import random
 import urllib.request
 import urllib.error
 from typing import List, Dict, Any, Optional
@@ -130,6 +131,9 @@ def get_shared_items() -> List[Dict[str, Any]]:
             with open(SHARED_FILE_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, list):
+                    for idx, it in enumerate(data):
+                        if not it.get("_id"):
+                            it["_id"] = f"item_{int(it.get('_timestamp', time.time() * 1000))}_{idx}_{random.randint(1000, 9999)}"
                     valid, exp = _clean_expired(data)
                     _MEM_CACHE = valid
                     _MEM_LAST_UPDATED = time.time()
@@ -201,13 +205,14 @@ def add_shared_items(new_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     added = []
     for it in new_items:
-        it_id = it.get("_id")
-        if not it_id or it_id not in existing_ids:
+        if not it.get("_id"):
+            it["_id"] = f"item_{int(time.time() * 1000)}_{random.randint(1000, 9999)}"
+        it_id = it["_id"]
+        if it_id not in existing_ids:
             if not it.get("_timestamp"):
                 it["_timestamp"] = int(time.time() * 1000)
             current.insert(0, it)
-            if it_id:
-                existing_ids.add(it_id)
+            existing_ids.add(it_id)
             added.append(it)
 
     save_shared_items(current)
@@ -235,9 +240,11 @@ def update_shared_item(updated_item: Dict[str, Any]) -> bool:
 
 def delete_shared_item(item_id: str) -> bool:
     """Elimina un albarán por su ID de la memoria compartida."""
+    if not item_id:
+        return False
     current = get_shared_items()
     init_len = len(current)
-    current = [it for it in current if it.get("_id") != item_id and it.get("_id") != item_id.split("_")[0]]
+    current = [it for it in current if it.get("_id") != item_id]
 
     if len(current) < init_len:
         save_shared_items(current)
