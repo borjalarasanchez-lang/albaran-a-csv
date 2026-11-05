@@ -165,9 +165,17 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                                 f.write(content)
 
                             try:
-                                data = extractor.extract_albaran_data(temp_path)
-                                data["archivo"] = filename_match
-                                results.append(data)
+                                items_data = extractor.extract_albaran_data(temp_path, filename=filename_match)
+                                if isinstance(items_data, list):
+                                    for it in items_data:
+                                        if not it.get("nombre_archivo_origen"):
+                                            it["nombre_archivo_origen"] = filename_match
+                                        if it.get("total_albaranes_en_pdf", 1) <= 1:
+                                            it["archivo"] = filename_match
+                                        results.append(it)
+                                else:
+                                    items_data["archivo"] = filename_match
+                                    results.append(items_data)
                             finally:
                                 if os.path.exists(temp_path):
                                     try:

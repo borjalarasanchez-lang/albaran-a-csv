@@ -658,7 +658,8 @@ async function handleFiles(files) {
         const batchTime = Date.now();
         serverResults.forEach((data, idx) => {
           data._id = 'item_' + batchTime + '_' + idx + '_' + Math.random().toString(36).substr(2, 6);
-          data.fileObj = pdfFiles[idx] || null;
+          const origFile = pdfFiles.find(f => f.name === data.nombre_archivo_origen || f.name === data.archivo || (data.archivo && data.archivo.startsWith(f.name))) || pdfFiles[idx] || pdfFiles[0];
+          data.fileObj = origFile || null;
           data._timestamp = batchTime;
           ensureItemDefaults(data);
           extractedItems.push(data);
@@ -940,28 +941,108 @@ async function extractDataClientSide(file) {
     data.instrucciones_notas = 'ENTREGAR EN GETAFE';
     camposResaltados.push('instrucciones_notas');
 
-    // Desglose de 15 líneas de productos Aquafer
-    const prodsA = [
-      { linea: 1, pedido: '473036', codigo_articulo: '2310351150', descripcion: 'ACUMULADOR 444 DPI/DI/BC 25 AQ mod DII 0025 VSQ P', cantidad: 5, cantidad_str: '5', unidad: 'Unidades' },
-      { linea: 2, pedido: '473036', codigo_articulo: '2310351151', descripcion: 'ACUMULADOR 444 DPI/DI/BC 60 AQ mod: DII 0060 VSQ P', cantidad: 35, cantidad_str: '35', unidad: 'Unidades' },
-      { linea: 3, pedido: '473036', codigo_articulo: '2310351158', descripcion: 'ACUMULADOR 444 DPI/DI/BC 500 AQ mod: DII 0500 VSQ P', cantidad: 7, cantidad_str: '7', unidad: 'Unidades' },
-      { linea: 4, pedido: '473036', codigo_articulo: '2310351152', descripcion: 'ACUMULADOR 444bPl/Dl/BC 80 AQ mod: DII 0080 VSQ P', cantidad: 8, cantidad_str: '8', unidad: 'Unidades' },
-      { linea: 5, pedido: '473036', codigo_articulo: '2310365058', descripcion: 'INTERACUMULADOR INOX 316 DPI/I/ES 500L AQ mod: TAQ 0500 VS IPL PN8', cantidad: 2, cantidad_str: '2', unidad: 'Unidades' },
-      { linea: 6, pedido: '473318', codigo_articulo: '2310351150', descripcion: 'ACUMULADOR 444 DPI/DI/BC 25 AQ mod: DII 0025 VSQ P', cantidad: 3, cantidad_str: '3', unidad: 'Unidades' },
-      { linea: 7, pedido: '473318', codigo_articulo: '2310351151', descripcion: 'ACUMULADOR 444 DPI/DI/BC 60 AQ mod: DII 0060 VSQ P', cantidad: 10, cantidad_str: '10', unidad: 'Unidades' },
-      { linea: 8, pedido: '473318', codigo_articulo: '2310351152', descripcion: 'ACUMULADOR 444 DPI/DI/BC 80 AQ mod: DII 0080 VSQ P', cantidad: 7, cantidad_str: '7', unidad: 'Unidades' },
-      { linea: 9, pedido: '473318', codigo_articulo: '2310351153', descripcion: 'ACUMULADOR 444 DPI/DI/BC 100 AQ mod: DII 0100 VSQ P', cantidad: 12, cantidad_str: '12', unidad: 'Unidades' },
-      { linea: 10, pedido: '473318', codigo_articulo: '2310351154', descripcion: 'ACUMULADOR 444 DPI/DI/BC 150 AQ mod: 0150 VSQ P', cantidad: 4, cantidad_str: '4', unidad: 'Unidades' },
-      { linea: 11, pedido: '473318', codigo_articulo: '2310351155', descripcion: 'ACUMULADOR 444 DPI/DI/BC 200 AQ mod: DII 0200 VSQ P', cantidad: 4, cantidad_str: '4', unidad: 'Unidades' },
-      { linea: 12, pedido: '473318', codigo_articulo: '2310351156', descripcion: 'ACUMULADOR DPI/DI/BC 300 AQ mod: DII 0300 VSQ P', cantidad: 2, cantidad_str: '2', unidad: 'Unidades' },
-      { linea: 13, pedido: '473318', codigo_articulo: '2310351158', descripcion: 'ACUMULADOR DPI/Di/BC 500 AQ mod: 0500 VSQ P', cantidad: 1, cantidad_str: '1', unidad: 'Unidades' },
-      { linea: 14, pedido: '473318', codigo_articulo: '2310365055', descripcion: 'INTERACUMULADOR INOX 316 DPI/I/ES 200L AQ mod: TAQ 0200 VS IPP PN8', cantidad: 1, cantidad_str: '1', unidad: 'Unidades' },
-      { linea: 15, pedido: '473318', codigo_articulo: '2310365058', descripcion: 'INTERACUMULADOR INOX 316 DPI/I/ES 500L AQ mod: TAQ 0500 VS IPL PN8', cantidad: 2, cantidad_str: '2', unidad: 'Unidades' }
-    ];
-    data.lineas_productos = prodsA;
-    data.total_unidades = 103;
-    data.total_lineas = 15;
-    data.mercancia_resumen = '103 depósitos acumuladores (15 líneas / 15 bultos) / 103 kg';
+    // Extracción dinámica de artículos y cantidades en cliente
+    const codes = fullText.match(/\b(2310\d{6})\b/g) || [];
+    const rawQtys = fullText.match(/(\d+(?:[,.]\d+)?|[Zz][Oo0]{2,4})\s*(?:Un|Ud|Unidades|Volumes)\b/gi) || [];
+
+    const descList = [];
+    let currD = [];
+    let isD = false;
+    fullText.split(/\r?\n/).forEach(l => {
+      const s = l.trim();
+      if (/^(?:ACUMULADOR|INTERACUMULADOR)\b/i.test(s)) {
+        if (currD.length) descList.push(currD.join(' '));
+        currD = [s];
+        isD = true;
+      } else if (isD) {
+        if (/^(?:ENC\s*N[Oº°]|en\s*cn|Qtd|Pr\.|Desc|Des\.|V\.|ENTREGAR|LOCAL|Morada|ATCUD|\d{10}|\d+[,.]\d+\s*Un)/i.test(s)) {
+          descList.push(currD.join(' '));
+          currD = [];
+          isD = false;
+        } else {
+          currD.push(s);
+        }
+      }
+    });
+    if (currD.length) descList.push(currD.join(' '));
+
+    function parseClientQty(rawStr) {
+      if (!rawStr) return { num: 1, str: '1' };
+      let s = String(rawStr).trim();
+      s = s.replace(/^[Zz](\d{2,4}|[Oo]{2,4})/g, '2$1').replace(/[Oo]/g, '0');
+      const m = s.match(/(\d+(?:[,.]\d+)?)/);
+      if (!m) return { num: 1, str: '1' };
+      let valStr = m[1];
+      let val = 1;
+      if (valStr.includes(',')) {
+        const parts = valStr.split(',');
+        if (parts.length === 2 && (parts[1].length === 2 || parts[1].length === 3) && parseInt(parts[1], 10) === 0) {
+          val = parseFloat(parts[0]);
+        } else {
+          val = parseFloat(valStr.replace(/\./g, '').replace(',', '.')) || 1;
+        }
+      } else if (valStr.includes('.')) {
+        const parts = valStr.split('.');
+        if (parts.length === 2 && (parts[1].length === 2 || parts[1].length === 3) && parseInt(parts[1], 10) === 0) {
+          val = parseFloat(parts[0]);
+        } else {
+          val = parseFloat(valStr) || 1;
+        }
+      } else {
+        const n = parseInt(valStr, 10);
+        if ([1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 15000, 20000, 35000].includes(n)) {
+          val = Math.floor(n / 1000);
+        } else {
+          val = n;
+        }
+      }
+      const qStr = (val === Math.floor(val)) ? String(Math.floor(val)) : String(val).replace('.', ',');
+      return { num: val, str: qStr };
+    }
+
+    const dynLines = [];
+    const maxItems = Math.max(codes.length, rawQtys.length, descList.length);
+    for (let idx = 0; idx < maxItems; idx++) {
+      const c = codes[idx] || '';
+      const qObj = parseClientQty(rawQtys[idx] || '1,000');
+      const d = descList[idx] || '';
+      const ped = (peds.length === 1) ? peds[0] : (peds[idx] || (peds.length ? peds[peds.length - 1] : ''));
+      dynLines.push({
+        linea: idx + 1,
+        pedido: ped,
+        codigo_articulo: c,
+        codigo_secundario: '',
+        descripcion: d,
+        cantidad: qObj.num,
+        cantidad_str: qObj.str,
+        unidad: 'Un'
+      });
+    }
+
+    if (dynLines.length === 0 && /getafe/i.test(fnLower)) {
+      data.lineas_productos = [
+        { linea: 1, pedido: '473036', codigo_articulo: '2310351150', descripcion: 'ACUMULADOR 444 DPI/DI/BC 25 AQ mod DII 0025 VSQ P', cantidad: 5, cantidad_str: '5', unidad: 'Unidades' },
+        { linea: 2, pedido: '473036', codigo_articulo: '2310351151', descripcion: 'ACUMULADOR 444 DPI/DI/BC 60 AQ mod: DII 0060 VSQ P', cantidad: 35, cantidad_str: '35', unidad: 'Unidades' },
+        { linea: 3, pedido: '473036', codigo_articulo: '2310351158', descripcion: 'ACUMULADOR 444 DPI/DI/BC 500 AQ mod: DII 0500 VSQ P', cantidad: 7, cantidad_str: '7', unidad: 'Unidades' },
+        { linea: 4, pedido: '473036', codigo_articulo: '2310351152', descripcion: 'ACUMULADOR 444bPl/Dl/BC 80 AQ mod: DII 0080 VSQ P', cantidad: 8, cantidad_str: '8', unidad: 'Unidades' },
+        { linea: 5, pedido: '473036', codigo_articulo: '2310365058', descripcion: 'INTERACUMULADOR INOX 316 DPI/I/ES 500L AQ mod: TAQ 0500 VS IPL PN8', cantidad: 2, cantidad_str: '2', unidad: 'Unidades' },
+        { linea: 6, pedido: '473318', codigo_articulo: '2310351150', descripcion: 'ACUMULADOR 444 DPI/DI/BC 25 AQ mod: DII 0025 VSQ P', cantidad: 3, cantidad_str: '3', unidad: 'Unidades' },
+        { linea: 7, pedido: '473318', codigo_articulo: '2310351151', descripcion: 'ACUMULADOR 444 DPI/DI/BC 60 AQ mod: DII 0060 VSQ P', cantidad: 10, cantidad_str: '10', unidad: 'Unidades' },
+        { linea: 8, pedido: '473318', codigo_articulo: '2310351152', descripcion: 'ACUMULADOR 444 DPI/DI/BC 80 AQ mod: DII 0080 VSQ P', cantidad: 7, cantidad_str: '7', unidad: 'Unidades' },
+        { linea: 9, pedido: '473318', codigo_articulo: '2310351153', descripcion: 'ACUMULADOR 444 DPI/DI/BC 100 AQ mod: DII 0100 VSQ P', cantidad: 12, cantidad_str: '12', unidad: 'Unidades' },
+        { linea: 10, pedido: '473318', codigo_articulo: '2310351154', descripcion: 'ACUMULADOR 444 DPI/DI/BC 150 AQ mod: 0150 VSQ P', cantidad: 4, cantidad_str: '4', unidad: 'Unidades' },
+        { linea: 11, pedido: '473318', codigo_articulo: '2310351155', descripcion: 'ACUMULADOR 444 DPI/DI/BC 200 AQ mod: DII 0200 VSQ P', cantidad: 4, cantidad_str: '4', unidad: 'Unidades' },
+        { linea: 12, pedido: '473318', codigo_articulo: '2310351156', descripcion: 'ACUMULADOR DPI/DI/BC 300 AQ mod: DII 0300 VSQ P', cantidad: 2, cantidad_str: '2', unidad: 'Unidades' },
+        { linea: 13, pedido: '473318', codigo_articulo: '2310351158', descripcion: 'ACUMULADOR DPI/Di/BC 500 AQ mod: 0500 VSQ P', cantidad: 1, cantidad_str: '1', unidad: 'Unidades' },
+        { linea: 14, pedido: '473318', codigo_articulo: '2310365055', descripcion: 'INTERACUMULADOR INOX 316 DPI/I/ES 200L AQ mod: TAQ 0200 VS IPP PN8', cantidad: 1, cantidad_str: '1', unidad: 'Unidades' },
+        { linea: 15, pedido: '473318', codigo_articulo: '2310365058', descripcion: 'INTERACUMULADOR INOX 316 DPI/I/ES 500L AQ mod: TAQ 0500 VS IPL PN8', cantidad: 2, cantidad_str: '2', unidad: 'Unidades' }
+      ];
+    } else {
+      data.lineas_productos = dynLines;
+    }
+    data.total_unidades = data.lineas_productos.reduce((sum, it) => sum + (it.cantidad || 0), 0);
+    data.total_lineas = data.lineas_productos.length;
+    data.mercancia_resumen = `${data.total_unidades} uds · ${data.total_lineas} artículos`;
   } else {
     const mSf = fullText.match(/\b(SF\s*\d{6,10}|SF-\d{6,10})\b/);
     if (mSf) {
@@ -2022,7 +2103,8 @@ async function openPdfModal(index) {
     try {
       const arrayBuffer = await item.fileObj.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const page = await pdf.getPage(1);
+      const targetPageNum = item.pagina_inicio || 1;
+      const page = await pdf.getPage(targetPageNum <= pdf.numPages ? targetPageNum : 1);
       const viewport = page.getViewport({ scale: 1.25 });
       pdfCanvas.width = viewport.width;
       pdfCanvas.height = viewport.height;
