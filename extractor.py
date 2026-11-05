@@ -161,37 +161,53 @@ def parse_cantidad(raw_str: str) -> tuple[float, str]:
 
 
 def extract_aquafer_lineas(page_text: str, filename: str) -> List[Dict[str, Any]]:
-    """Extrae las líneas reales de artículos de un albarán Aquafer (códigos, descripciones y cantidades)."""
+    """Extrae las líneas reales de artículos de un albarán Aquafer (códigos, descripciones y cantidades) con asignación exacta de pedidos por bloque."""
     codes = re.findall(r'\b(2310\d{6})\b', page_text)
     raw_qtys = re.findall(r'(\d+(?:[,.]\d+)?|[Zz][Oo0]{2,4})\s*(?:Un|Ud|Unidades|Volumes)\b', page_text, re.I)
 
-    # Descripciones estructuradas
-    desc_list = []
-    curr = []
-    is_in_desc = False
+    # Extraer descripciones estructuradas y pedidos asociados por bloque (en Aquafer el 'ENC NO' aparece al final del grupo de artículos correspondientes)
+    descs_with_peds = []
+    curr_desc = []
+    is_desc = False
+    curr_block_descs = []
+
     for line in page_text.splitlines():
         l = line.strip()
-        if re.match(r'^(?:ACUMULADOR|INTERACUMULADOR)\b', l, re.I):
-            if curr:
-                desc_list.append(" ".join(curr))
-                curr = []
-            curr.append(l)
-            is_in_desc = True
-        elif is_in_desc:
-            if re.match(r'^(?:ENC\s*N[Oº°]|en\s*cn|Qtd|Pr\.|Desc|Des\.|V\.|ENTREGAR|LOCAL|Morada|ATCUD|\d{10}|\d+[,.]\d+\s*Un|[Zz][Oo0]{2,4}\s*Un)', l, re.I):
-                desc_list.append(" ".join(curr))
-                curr = []
-                is_in_desc = False
+        m_enc = re.search(r'(?:enc\s*(?:n[oº°]|num|no|\.)?|en\s*cn[oº°]?)\s*[:\s]*([0-9]{5,8})', l, re.I)
+        if m_enc:
+            ped_num = clean_val(m_enc.group(1))
+            if curr_desc:
+                curr_block_descs.append(" ".join(curr_desc))
+                curr_desc = []
+                is_desc = False
+            for d in curr_block_descs:
+                descs_with_peds.append((d, ped_num))
+            curr_block_descs = []
+            continue
+
+        if re.match(r'^(?:ACUMULADOR|INTERACUMULADOR|TERMOACUMULADOR)\b', l, re.I):
+            if curr_desc:
+                curr_block_descs.append(" ".join(curr_desc))
+                curr_desc = []
+            curr_desc.append(l)
+            is_desc = True
+        elif is_desc:
+            if re.match(r'^(?:Qtd|Pr\.|Desc|Des\.|V\.|ENTREGAR|LOCAL|Morada|ATCUD|\d{10}|\d+[,.]\d+\s*Un|[Zz][Oo0]{2,4}\s*Un)', l, re.I):
+                curr_block_descs.append(" ".join(curr_desc))
+                curr_desc = []
+                is_desc = False
             else:
-                curr.append(l)
-    if curr:
-        desc_list.append(" ".join(curr))
+                curr_desc.append(l)
 
-    # Pedidos específicos por línea o documento
-    pedidos_found = re.findall(r'(?:enc\s*(?:n[oº°]|num|no|\.)?|en\s*cn[oº°]?)\s*[:\s]*([0-9]{5,8})', page_text, re.I)
+    if curr_desc:
+        curr_block_descs.append(" ".join(curr_desc))
+    if curr_block_descs:
+        pedidos_found = re.findall(r'(?:enc\s*(?:n[oº°]|num|no|\.)?|en\s*cn[oº°]?)\s*[:\s]*([0-9]{5,8})', page_text, re.I)
+        last_ped = clean_val(pedidos_found[-1]) if pedidos_found else ""
+        for d in curr_block_descs:
+            descs_with_peds.append((d, last_ped))
 
-    lines = []
-    n = max(len(codes), len(raw_qtys), len(desc_list))
+    n = max(len(codes), len(raw_qtys), len(descs_with_peds))
     if n == 0:
         # Fallback canónico únicamente para la muestra histórica getafe si el OCR no lee nada
         if "getafe" in filename.lower():
@@ -214,20 +230,13 @@ def extract_aquafer_lineas(page_text: str, filename: str) -> List[Dict[str, Any]
             ]
         return []
 
+    lines = []
     for i in range(n):
         cod = codes[i] if i < len(codes) else ""
         q_raw = raw_qtys[i] if i < len(raw_qtys) else "1,000"
         q_num, q_str = parse_cantidad(q_raw)
-        desc = desc_list[i] if i < len(desc_list) else ""
+        desc, ped = descs_with_peds[i] if i < len(descs_with_peds) else ("", "")
         desc = translate_portuguese_to_spanish(desc)
-
-        ped = ""
-        if len(pedidos_found) == 1:
-            ped = pedidos_found[0]
-        elif i < len(pedidos_found):
-            ped = pedidos_found[i]
-        elif pedidos_found:
-            ped = pedidos_found[-1]
 
         lines.append({
             "linea": i + 1,
@@ -665,6 +674,12 @@ def extract_albaran_data(pdf_path: str, filename: Optional[str] = None) -> List[
     """
     pages_text, used_ocr = extract_pages_text_and_ocr(pdf_path)
     base_fn = os.path.basename(filename) if filename else re.sub(r'^up_\d+_', '', os.path.basename(pdf_path))
+
+    # Si es un documento escaneado y el servidor no dispone de motor OCR nativo (ej. Linux / Vercel Serverless),
+    # devolvemos lista vacía para que el navegador ejecute OCR de forma transparente con Tesseract.js
+    total_chars = sum(len(t.strip()) for t in pages_text)
+    if total_chars < 40 and not used_ocr:
+        return []
 
     # 1. Detectar si hay información de CMR en alguna página (común para todo el envío)
     cmr_companion = None

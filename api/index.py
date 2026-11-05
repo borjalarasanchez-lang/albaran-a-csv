@@ -174,12 +174,23 @@ class handler(BaseHTTPRequestHandler):
                     # Guardar automáticamente en la memoria compartida
                     if results:
                         storage_manager.add_shared_items(results)
-
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json; charset=utf-8")
-                    self.end_headers()
-                    self.wfile.write(json.dumps(results, ensure_ascii=False).encode("utf-8"))
-                    return
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.end_headers()
+                        self.wfile.write(json.dumps(results, ensure_ascii=False).encode("utf-8"))
+                        return
+                    else:
+                        # Si no se extrajeron datos por ser un PDF escaneado en servidor sin motor OCR
+                        res = {
+                            "ok": False,
+                            "requires_client_ocr": True,
+                            "message": "Documento escaneado sin texto digital. Procesando con motor OCR de alta precisión en navegador."
+                        }
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.end_headers()
+                        self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+                        return
 
             except Exception as e:
                 self.send_response(500)
