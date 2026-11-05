@@ -690,14 +690,13 @@ async function handleFiles(files) {
   // Persistir PDFs para previsualización inmediata (IndexedDB local y servidor multi-usuario)
   for (const f of pdfFiles) {
     try {
-      f.arrayBuffer().then(buf => {
-        savePdfToLocalDB(f.name, buf);
-        fetch('/api/guardar_pdf', {
-          method: 'POST',
-          headers: { 'X-Filename': encodeURIComponent(f.name), 'Content-Type': 'application/pdf' },
-          body: buf
-        }).catch(err => console.warn('Aviso sincronizando PDF con servidor:', err));
-      }).catch(err => console.warn('Aviso leyendo PDF para caché:', err));
+      const buf = await f.arrayBuffer();
+      await savePdfToLocalDB(f.name, buf);
+      fetch('/api/guardar_pdf', {
+        method: 'POST',
+        headers: { 'X-Filename': encodeURIComponent(f.name), 'Content-Type': 'application/pdf' },
+        body: buf
+      }).catch(err => console.warn('Aviso sincronizando PDF con servidor:', err));
     } catch (e) {
       console.warn('Error iniciando caché de PDF:', e);
     }
@@ -803,6 +802,9 @@ function cleanStr(s) {
 function ensureItemDefaults(item) {
   let wasHealed = false;
   if (!item.campos_resaltados) item.campos_resaltados = [];
+  if (!item.nombre_archivo_origen && item.archivo) {
+    item.nombre_archivo_origen = item.archivo.replace(/\s*\([Aa]lbar[aá]n\s*\d+\s*de\s*\d+\)/gi, '').trim();
+  }
   if (!item.lista_pedidos) {
     item.lista_pedidos = item.numeros_pedidos ? String(item.numeros_pedidos).split(',').map(s => s.trim()).filter(Boolean) : [];
   }

@@ -69,7 +69,7 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 return
 
-        # API: Servir archivo PDF original para previsualización
+        # API: Servir archivo PDF original para previsualización multiusuario
         if url_path == "/api/pdf" or url_path.endswith("/api/pdf"):
             query = urllib.parse.parse_qs(url_parts.query)
             filename = query.get("file", [""])[0]
@@ -78,32 +78,10 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                 return
 
             safe_name = os.path.basename(filename)
-            candidate_dirs = [
-                os.path.join(DIRECTORY, "archivos_pdf"),
-                os.path.join(DIRECTORY, "muestras"),
-                os.path.join(DIRECTORY, "temp_uploads")
-            ]
-            found_path = None
-            clean_target = safe_name.lower().split(" (")[0].strip()
+            pdf_data = storage_manager.get_pdf(filename)
 
-            for c_dir in candidate_dirs:
-                if not os.path.exists(c_dir):
-                    continue
-                p = os.path.join(c_dir, safe_name)
-                if os.path.exists(p) and os.path.isfile(p):
-                    found_path = p
-                    break
-                for fname in os.listdir(c_dir):
-                    if fname.lower() == clean_target or fname.lower() == safe_name.lower() or fname.lower().startswith(clean_target):
-                        found_path = os.path.join(c_dir, fname)
-                        break
-                if found_path:
-                    break
-
-            if found_path:
+            if pdf_data:
                 try:
-                    with open(found_path, "rb") as f:
-                        pdf_data = f.read()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/pdf")
                     self.send_header("Content-Disposition", f'inline; filename="{safe_name}"')
@@ -113,7 +91,7 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                     self.wfile.write(pdf_data)
                     return
                 except Exception as e:
-                    self.send_error(500, f"Error leyendo PDF: {e}")
+                    self.send_error(500, f"Error enviando PDF: {e}")
                     return
             else:
                 self.send_response(404)
@@ -217,15 +195,11 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                             with open(temp_path, "wb") as f:
                                 f.write(content)
 
-                            # Guardar copia persistente en archivos_pdf para previsualización inmediata y multiusuario
+                            # Guardar copia persistente para previsualización multiusuario
                             try:
-                                target_dir = os.path.join(DIRECTORY, "archivos_pdf")
-                                os.makedirs(target_dir, exist_ok=True)
-                                dest_path = os.path.join(target_dir, os.path.basename(filename_match))
-                                with open(dest_path, "wb") as f_dest:
-                                    f_dest.write(content)
+                                storage_manager.save_pdf(filename_match, content)
                             except Exception as e_save:
-                                print(f"Aviso guardando en archivos_pdf: {e_save}")
+                                print(f"Aviso guardando PDF multiusuario: {e_save}")
 
                             try:
                                 items_data = extractor.extract_albaran_data(temp_path, filename=filename_match)
@@ -381,12 +355,7 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                 filename = urllib.parse.unquote(raw_filename)
                 safe_name = os.path.basename(filename)
 
-                target_dir = os.path.join(DIRECTORY, "archivos_pdf")
-                os.makedirs(target_dir, exist_ok=True)
-                dest_path = os.path.join(target_dir, safe_name)
-
-                with open(dest_path, "wb") as f_dest:
-                    f_dest.write(body)
+                storage_manager.save_pdf(safe_name, body)
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -470,11 +439,26 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
+def get_local_ip():
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
 def run_server(port=PORT):
     server_address = ("", port)
     httpd = ThreadingHTTPServer(server_address, AlbaranHandler)
+    local_ip = get_local_ip()
     print("======================================================")
-    print(f" Servidor iniciado en: http://localhost:{port}")
+    print(f" Servidor iniciado localmente: http://localhost:{port}")
+    if local_ip != "127.0.0.1":
+        print(f" Acceso para Otros Usuarios (Red/WiFi): http://{local_ip}:{port}")
+    print(" PDFs Almacenados: en archivos_pdf/ (accesibles para todo el equipo)")
     print(" Motor OCR de Windows: ACTIVO (Documentos escaneados soportados)")
     print(" Generador Excel Estilizado (xlsxwriter): ACTIVO")
     print(" Memoria Compartida Multiusuario: ACTIVA (albaranes_compartidos.json)")

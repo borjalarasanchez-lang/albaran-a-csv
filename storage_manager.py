@@ -11,6 +11,8 @@ import os
 import json
 import time
 import random
+import re
+import base64
 import urllib.request
 import urllib.error
 from typing import List, Dict, Any, Optional
@@ -273,4 +275,149 @@ def delete_shared_item(item_id: str) -> bool:
 def clear_shared_items() -> bool:
     """Vacía toda la memoria compartida para todos los usuarios."""
     return save_shared_items([])
+
+
+def save_pdf(filename: str, data: bytes) -> bool:
+    """Guarda un archivo PDF de forma persistente para acceso multiusuario (disco local y nube)."""
+    if not filename or not data:
+        return False
+
+    safe_name = os.path.basename(filename).strip()
+    saved_disk = False
+
+    # 1. Guardar en disco local (archivos_pdf/) con fallback seguro a /tmp si es de solo lectura
+    candidate_dirs = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "archivos_pdf"),
+        "/tmp/archivos_pdf",
+        "/tmp"
+    ]
+    for cdir in candidate_dirs:
+        try:
+            os.makedirs(cdir, exist_ok=True)
+            fpath = os.path.join(cdir, safe_name)
+            with open(fpath, "wb") as f:
+                f.write(data)
+            saved_disk = True
+            break
+        except Exception:
+            continue
+
+    # 2. Guardar en la nube si está configurado Upstash o Firebase
+    cfg = _get_cloud_config()
+    if cfg and cfg["type"] == "upstash":
+        try:
+            b64_str = base64.b64encode(data).decode("ascii")
+            req = urllib.request.Request(
+                f"{cfg['url']}/set/pdf_blob:{urllib.parse.quote(safe_name)}",
+                data=json.dumps(b64_str).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {cfg['token']}",
+                    "Content-Type": "application/json"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=10) as res:
+                pass
+        except Exception as e:
+            print(f"Error guardando PDF en Upstash: {e}")
+
+    elif cfg and cfg["type"] == "firebase":
+        try:
+            b64_str = base64.b64encode(data).decode("ascii")
+            safe_key = re.sub(r'[^a-zA-Z0-9_-]', '_', safe_name)
+            req = urllib.request.Request(
+                f"{cfg['url']}/pdfs/{safe_key}.json",
+                data=json.dumps({"name": safe_name, "b64": b64_str, "ts": time.time()}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="PUT"
+            )
+            with urllib.request.urlopen(req, timeout=10) as res:
+                pass
+        except Exception as e:
+            print(f"Error guardando PDF en Firebase: {e}")
+
+    return saved_disk
+
+
+def get_pdf(filename: str) -> Optional[bytes]:
+    """Recupera los bytes de un PDF desde disco local o desde almacenamiento en la nube."""
+    if not filename:
+        return None
+    safe_name = os.path.basename(filename).strip()
+    clean_target = safe_name.lower().split(" (")[0].strip()
+
+    candidate_dirs = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "archivos_pdf"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "muestras"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_uploads"),
+        "/tmp/archivos_pdf",
+        "/tmp"
+    ]
+
+    for cdir in candidate_dirs:
+        if not os.path.isdir(cdir):
+            continue
+        p = os.path.join(cdir, safe_name)
+        if os.path.isfile(p):
+            try:
+                with open(p, "rb") as f:
+                    return f.read()
+            except Exception:
+                pass
+        # Búsqueda por coincidencia insensible a mayúsculas
+        try:
+            for fname in os.listdir(cdir):
+                fl = fname.lower()
+                if fl == safe_name.lower() or fl == clean_target or fl.startswith(clean_target):
+                    found_p = os.path.join(cdir, fname)
+                    if os.path.isfile(found_p):
+                        with open(found_p, "rb") as f:
+                            return f.read()
+        except Exception:
+            pass
+
+    # Si no está en disco, buscar en Upstash / Firebase
+    cfg = _get_cloud_config()
+    if cfg and cfg["type"] == "upstash":
+        try:
+            req = urllib.request.Request(
+                f"{cfg['url']}/get/pdf_blob:{urllib.parse.quote(safe_name)}",
+                headers={"Authorization": f"Bearer {cfg['token']}"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as res:
+                body = json.loads(res.read().decode("utf-8"))
+                val = body.get("result")
+                if val:
+                    data = base64.b64decode(val)
+                    try:
+                        cdir = candidate_dirs[0]
+                        os.makedirs(cdir, exist_ok=True)
+                        with open(os.path.join(cdir, safe_name), "wb") as f:
+                            f.write(data)
+                    except Exception:
+                        pass
+                    return data
+        except Exception as e:
+            print(f"Error recuperando PDF de Upstash: {e}")
+
+    elif cfg and cfg["type"] == "firebase":
+        try:
+            safe_key = re.sub(r'[^a-zA-Z0-9_-]', '_', safe_name)
+            req = urllib.request.Request(f"{cfg['url']}/pdfs/{safe_key}.json")
+            with urllib.request.urlopen(req, timeout=8) as res:
+                body = json.loads(res.read().decode("utf-8"))
+                if body and "b64" in body:
+                    data = base64.b64decode(body["b64"])
+                    try:
+                        cdir = candidate_dirs[0]
+                        os.makedirs(cdir, exist_ok=True)
+                        with open(os.path.join(cdir, safe_name), "wb") as f:
+                            f.write(data)
+                    except Exception:
+                        pass
+                    return data
+        except Exception as e:
+            print(f"Error recuperando PDF de Firebase: {e}")
+
+    return None
 
