@@ -25,8 +25,9 @@ let currentSearchTerm = '';
 // ALMACENAMIENTO PERSISTENTE (INDEXEDDB + CADUCIDAD A 2 MESES)
 // ==========================================
 const DB_NAME = 'AlbaranProDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'albaranes';
+const PDF_STORE_NAME = 'pdf_files';
 const DOS_MESES_MS = 60 * 24 * 60 * 60 * 1000; // 60 días (~2 meses en milisegundos)
 
 function openDatabase() {
@@ -42,6 +43,9 @@ function openDatabase() {
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME, { keyPath: '_id' });
         }
+        if (!db.objectStoreNames.contains(PDF_STORE_NAME)) {
+          db.createObjectStore(PDF_STORE_NAME, { keyPath: 'name' });
+        }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(null);
@@ -49,6 +53,36 @@ function openDatabase() {
       resolve(null);
     }
   });
+}
+
+async function savePdfToLocalDB(name, arrayBuffer) {
+  if (!name || !arrayBuffer) return;
+  try {
+    const db = await openDatabase();
+    if (!db) return;
+    const tx = db.transaction(PDF_STORE_NAME, 'readwrite');
+    const store = tx.objectStore(PDF_STORE_NAME);
+    store.put({ name: name, data: arrayBuffer, timestamp: Date.now() });
+  } catch (e) {
+    console.warn('Aviso guardando PDF en caché local:', e);
+  }
+}
+
+async function getPdfFromLocalDB(name) {
+  if (!name) return null;
+  try {
+    const db = await openDatabase();
+    if (!db) return null;
+    return new Promise((resolve) => {
+      const tx = db.transaction(PDF_STORE_NAME, 'readonly');
+      const store = tx.objectStore(PDF_STORE_NAME);
+      const req = store.get(name);
+      req.onsuccess = () => resolve(req.result ? req.result.data : null);
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) {
+    return null;
+  }
 }
 
 async function saveLocalBackupOnly() {
@@ -315,6 +349,22 @@ const modalFilename = document.getElementById('modalFilename');
 const modalDocType = document.getElementById('modalDocType');
 const modalModeloBadge = document.getElementById('modalModeloBadge');
 const pdfCanvas = document.getElementById('pdfCanvas');
+const pdfViewerPane = document.getElementById('pdfViewerPane');
+const pdfToolbar = document.getElementById('pdfToolbar');
+const pdfLoadingSpinner = document.getElementById('pdfLoadingSpinner');
+const pdfFallbackNotice = document.getElementById('pdfFallbackNotice');
+const pdfFallbackTitle = document.getElementById('pdfFallbackTitle');
+const pdfFallbackDesc = document.getElementById('pdfFallbackDesc');
+const pdfPageIndicator = document.getElementById('pdfPageIndicator');
+const btnPrevPdfPage = document.getElementById('btnPrevPdfPage');
+const btnNextPdfPage = document.getElementById('btnNextPdfPage');
+
+let currentPdfDoc = null;
+let currentPdfPageNum = 1;
+let currentPdfTotalPages = 1;
+let currentPdfScale = 1.25;
+let currentPdfBytes = null;
+let currentPdfFileName = '';
 
 const modalFields = {
   tipo_documento: document.getElementById('modalFieldTipo'),
@@ -636,6 +686,22 @@ async function handleFiles(files) {
   progressContainer.style.display = 'flex';
   progressBar.style.width = '15%';
   progressText.textContent = `Analizando ${pdfFiles.length} documento(s) con OCR y separación de modelos...`;
+
+  // Persistir PDFs para previsualización inmediata (IndexedDB local y servidor multi-usuario)
+  for (const f of pdfFiles) {
+    try {
+      f.arrayBuffer().then(buf => {
+        savePdfToLocalDB(f.name, buf);
+        fetch('/api/guardar_pdf', {
+          method: 'POST',
+          headers: { 'X-Filename': encodeURIComponent(f.name), 'Content-Type': 'application/pdf' },
+          body: buf
+        }).catch(err => console.warn('Aviso sincronizando PDF con servidor:', err));
+      }).catch(err => console.warn('Aviso leyendo PDF para caché:', err));
+    } catch (e) {
+      console.warn('Error iniciando caché de PDF:', e);
+    }
+  }
 
   let processedCount = 0;
   let serverSuccess = false;
@@ -2353,8 +2419,135 @@ async function loadSamplePdfs() {
 }
 
 // ==========================================
-// VISOR MODAL
+// VISOR MODAL Y PREVISUALIZACIÓN PDF
 // ==========================================
+function getCleanPdfFileName(item) {
+  if (!item) return '';
+  if (item.nombre_archivo_origen && item.nombre_archivo_origen.trim()) {
+    return item.nombre_archivo_origen.trim();
+  }
+  let name = (item.archivo || '').trim();
+  name = name.replace(/\s*\([Aa]lbar[aá]n\s*\d+\s*de\s*\d+\)/gi, '').trim();
+  return name;
+}
+
+async function renderPdfPage(num) {
+  if (!currentPdfDoc) return;
+  if (num < 1) num = 1;
+  if (num > currentPdfDoc.numPages) num = currentPdfDoc.numPages;
+  currentPdfPageNum = num;
+
+  try {
+    const page = await currentPdfDoc.getPage(num);
+    const viewport = page.getViewport({ scale: currentPdfScale });
+    pdfCanvas.width = viewport.width;
+    pdfCanvas.height = viewport.height;
+    const renderContext = {
+      canvasContext: pdfCanvas.getContext('2d'),
+      viewport: viewport
+    };
+    await page.render(renderContext).promise;
+    pdfCanvas.style.display = 'block';
+
+    if (pdfPageIndicator) {
+      pdfPageIndicator.textContent = `Pág. ${num} de ${currentPdfDoc.numPages}`;
+    }
+    if (btnPrevPdfPage) btnPrevPdfPage.disabled = (num <= 1);
+    if (btnNextPdfPage) btnNextPdfPage.disabled = (num >= currentPdfDoc.numPages);
+  } catch (err) {
+    console.error('Error renderizando página PDF:', err);
+  }
+}
+
+function prevPdfPage() {
+  if (currentPdfDoc && currentPdfPageNum > 1) {
+    renderPdfPage(currentPdfPageNum - 1);
+  }
+}
+
+function nextPdfPage() {
+  if (currentPdfDoc && currentPdfPageNum < currentPdfDoc.numPages) {
+    renderPdfPage(currentPdfPageNum + 1);
+  }
+}
+
+function zoomPdf(delta) {
+  if (!currentPdfDoc) return;
+  const newScale = Math.min(Math.max(currentPdfScale + delta, 0.5), 3.0);
+  if (Math.abs(newScale - currentPdfScale) > 0.01) {
+    currentPdfScale = newScale;
+    renderPdfPage(currentPdfPageNum);
+  }
+}
+
+function downloadCurrentPdf() {
+  if (!currentPdfBytes) {
+    showToast('⚠️ No se dispone del archivo binario del PDF.');
+    return;
+  }
+  const blob = new Blob([currentPdfBytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = currentPdfFileName || 'documento.pdf';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function handleModalPdfUpload(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  if (currentPreviewIndex === null) return;
+  const item = extractedItems[currentPreviewIndex];
+  if (!item) return;
+
+  try {
+    const buffer = await file.arrayBuffer();
+    item.fileObj = file;
+    await savePdfToLocalDB(file.name, buffer);
+    const cleanName = getCleanPdfFileName(item);
+    if (cleanName && cleanName !== file.name) {
+      await savePdfToLocalDB(cleanName, buffer);
+    }
+
+    // Subir también al servidor
+    fetch('/api/guardar_pdf', {
+      method: 'POST',
+      headers: { 'X-Filename': encodeURIComponent(file.name), 'Content-Type': 'application/pdf' },
+      body: buffer
+    }).catch(e => console.warn(e));
+
+    openPdfModal(item._id);
+    showToast('✅ PDF vinculado correctamente a la previsualización.');
+  } catch (e) {
+    showToast('Error cargando el PDF: ' + e.message);
+  }
+}
+
+// Configurar arrastrar y soltar en el panel de PDF
+if (pdfViewerPane) {
+  pdfViewerPane.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    pdfViewerPane.style.borderColor = '#38bdf8';
+  });
+  pdfViewerPane.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    pdfViewerPane.style.borderColor = '';
+  });
+  pdfViewerPane.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    pdfViewerPane.style.borderColor = '';
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const droppedFile = e.dataTransfer.files[0];
+      if (droppedFile.name.toLowerCase().endsWith('.pdf') || droppedFile.type === 'application/pdf') {
+        await handleModalPdfUpload({ target: { files: [droppedFile] } });
+      }
+    }
+  });
+}
+
 async function openPdfModal(target) {
   let index = -1;
   let item = null;
@@ -2412,24 +2605,104 @@ async function openPdfModal(target) {
     }
   }
 
+  // Preparar visor PDF
   pdfModal.classList.add('open');
+  if (pdfToolbar) pdfToolbar.style.display = 'none';
+  if (pdfCanvas) pdfCanvas.style.display = 'none';
+  if (pdfFallbackNotice) pdfFallbackNotice.style.display = 'none';
+  if (pdfLoadingSpinner) pdfLoadingSpinner.style.display = 'block';
 
-  if (item.fileObj) {
+  currentPdfDoc = null;
+  currentPdfBytes = null;
+  const cleanName = getCleanPdfFileName(item);
+  currentPdfFileName = cleanName || item.archivo || 'documento.pdf';
+
+  let arrayBuffer = null;
+
+  // 1. Probar objeto File en memoria
+  if (item.fileObj && typeof item.fileObj.arrayBuffer === 'function') {
     try {
-      const arrayBuffer = await item.fileObj.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const targetPageNum = item.pagina_inicio || 1;
-      const page = await pdf.getPage(targetPageNum <= pdf.numPages ? targetPageNum : 1);
-      const viewport = page.getViewport({ scale: 1.25 });
-      pdfCanvas.width = viewport.width;
-      pdfCanvas.height = viewport.height;
-      const renderContext = {
-        canvasContext: pdfCanvas.getContext('2d'),
-        viewport: viewport
-      };
-      await page.render(renderContext).promise;
+      arrayBuffer = await item.fileObj.arrayBuffer();
     } catch (e) {
-      console.warn('No se pudo renderizar la página PDF en el canvas:', e);
+      console.warn('Error leyendo fileObj:', e);
+    }
+  }
+
+  // 2. Probar caché local IndexedDB
+  if (!arrayBuffer && cleanName) {
+    arrayBuffer = await getPdfFromLocalDB(cleanName);
+  }
+  if (!arrayBuffer && item.archivo) {
+    arrayBuffer = await getPdfFromLocalDB(item.archivo);
+  }
+
+  // 3. Probar API del servidor (/api/pdf?file=...)
+  if (!arrayBuffer && cleanName) {
+    try {
+      const resp = await fetch(`/api/pdf?file=${encodeURIComponent(cleanName)}`);
+      if (resp.ok) {
+        arrayBuffer = await resp.arrayBuffer();
+        savePdfToLocalDB(cleanName, arrayBuffer); // Guardar en caché local
+      }
+    } catch (e) {
+      console.warn('Error obteniendo PDF del servidor:', e);
+    }
+  }
+  if (!arrayBuffer && item.archivo && item.archivo !== cleanName) {
+    try {
+      const resp = await fetch(`/api/pdf?file=${encodeURIComponent(item.archivo)}`);
+      if (resp.ok) {
+        arrayBuffer = await resp.arrayBuffer();
+        savePdfToLocalDB(item.archivo, arrayBuffer);
+      }
+    } catch (e) {
+      console.warn('Error obteniendo PDF del servidor por nombre original:', e);
+    }
+  }
+
+  // 4. Probar muestras estáticas si coincide el nombre
+  if (!arrayBuffer && cleanName) {
+    try {
+      const resp = await fetch(`/muestras/${encodeURIComponent(cleanName)}`);
+      if (resp.ok) {
+        arrayBuffer = await resp.arrayBuffer();
+        savePdfToLocalDB(cleanName, arrayBuffer);
+      }
+    } catch (e) {
+      // Ignorar fallo de muestra
+    }
+  }
+
+  // Renderizar o mostrar fallback
+  if (pdfLoadingSpinner) pdfLoadingSpinner.style.display = 'none';
+
+  if (arrayBuffer && typeof pdfjsLib !== 'undefined') {
+    try {
+      currentPdfBytes = arrayBuffer;
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      currentPdfDoc = pdf;
+      currentPdfTotalPages = pdf.numPages;
+      currentPdfScale = 1.25;
+
+      if (pdfToolbar) pdfToolbar.style.display = 'flex';
+      const targetPageNum = Number(item.pagina_inicio) || 1;
+      await renderPdfPage(targetPageNum <= pdf.numPages ? targetPageNum : 1);
+    } catch (e) {
+      console.error('Error procesando PDF con pdfjs:', e);
+      if (pdfFallbackNotice) {
+        if (pdfFallbackTitle) pdfFallbackTitle.textContent = 'Error al renderizar PDF';
+        if (pdfFallbackDesc) pdfFallbackDesc.textContent = 'No se pudo interpretar el archivo PDF: ' + e.message;
+        pdfFallbackNotice.style.display = 'block';
+      }
+    }
+  } else {
+    // No se pudo encontrar el archivo binario
+    if (pdfFallbackNotice) {
+      if (pdfFallbackTitle) pdfFallbackTitle.textContent = `Archivo: ${cleanName || 'No encontrado'}`;
+      if (pdfFallbackDesc) {
+        pdfFallbackDesc.textContent = 'El documento no está disponible en la caché local ni en el servidor. Arrástralo a este cuadro o utiliza el botón para adjuntarlo.';
+      }
+      pdfFallbackNotice.style.display = 'block';
     }
   }
 }
@@ -2456,6 +2729,12 @@ function closePdfModal() {
   syncModalToItem();
   pdfModal.classList.remove('open');
   currentPreviewIndex = null;
+  currentPdfDoc = null;
+  currentPdfBytes = null;
+  if (pdfToolbar) pdfToolbar.style.display = 'none';
+  if (pdfCanvas) pdfCanvas.style.display = 'none';
+  if (pdfLoadingSpinner) pdfLoadingSpinner.style.display = 'none';
+  if (pdfFallbackNotice) pdfFallbackNotice.style.display = 'none';
   renderTables();
   showToast('💾 Cambios guardados correctamente.');
 }

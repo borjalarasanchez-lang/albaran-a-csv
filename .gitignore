@@ -24,6 +24,8 @@ wheels/
 
 # Carpetas temporales y subidas
 temp_uploads/
+archivos_pdf/*
+!archivos_pdf/.gitkeep
 albaranes_extraidos.csv
 albaranes_compartidos.json
 

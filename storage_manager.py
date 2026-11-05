@@ -34,6 +34,24 @@ def _clean_expired(items: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], i
             expired += 1
         else:
             valid.append(it)
+
+    # Limpiar PDFs huérfanos o mayores a 60 días en archivos_pdf/
+    try:
+        pdf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "archivos_pdf")
+        if os.path.isdir(pdf_dir):
+            PROTECTED = {"albaran_SALTOKI.pdf", "Cmr_Getafe.pdf", "ejemplo_apep_group.pdf", "ejemplo_aquafer.pdf"}
+            for fname in os.listdir(pdf_dir):
+                if fname in PROTECTED:
+                    continue
+                fpath = os.path.join(pdf_dir, fname)
+                if os.path.isfile(fpath) and (time.time() - os.path.getmtime(fpath) > (60 * 24 * 3600)):
+                    try:
+                        os.remove(fpath)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
     return valid, expired
 
 

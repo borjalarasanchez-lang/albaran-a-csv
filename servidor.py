@@ -69,6 +69,59 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 return
 
+        # API: Servir archivo PDF original para previsualización
+        if url_path == "/api/pdf" or url_path.endswith("/api/pdf"):
+            query = urllib.parse.parse_qs(url_parts.query)
+            filename = query.get("file", [""])[0]
+            if not filename:
+                self.send_error(400, "Falta parámetro 'file'")
+                return
+
+            safe_name = os.path.basename(filename)
+            candidate_dirs = [
+                os.path.join(DIRECTORY, "archivos_pdf"),
+                os.path.join(DIRECTORY, "muestras"),
+                os.path.join(DIRECTORY, "temp_uploads")
+            ]
+            found_path = None
+            clean_target = safe_name.lower().split(" (")[0].strip()
+
+            for c_dir in candidate_dirs:
+                if not os.path.exists(c_dir):
+                    continue
+                p = os.path.join(c_dir, safe_name)
+                if os.path.exists(p) and os.path.isfile(p):
+                    found_path = p
+                    break
+                for fname in os.listdir(c_dir):
+                    if fname.lower() == clean_target or fname.lower() == safe_name.lower() or fname.lower().startswith(clean_target):
+                        found_path = os.path.join(c_dir, fname)
+                        break
+                if found_path:
+                    break
+
+            if found_path:
+                try:
+                    with open(found_path, "rb") as f:
+                        pdf_data = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/pdf")
+                    self.send_header("Content-Disposition", f'inline; filename="{safe_name}"')
+                    self.send_header("Content-Length", str(len(pdf_data)))
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(pdf_data)
+                    return
+                except Exception as e:
+                    self.send_error(500, f"Error leyendo PDF: {e}")
+                    return
+            else:
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "error": f"PDF '{safe_name}' no encontrado en el servidor"}, ensure_ascii=False).encode("utf-8"))
+                return
+
         super().do_GET()
 
     def do_POST(self):
@@ -163,6 +216,16 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                             temp_path = os.path.join(DIRECTORY, "temp_uploads", f"up_{os.getpid()}_{os.path.basename(filename_match)}")
                             with open(temp_path, "wb") as f:
                                 f.write(content)
+
+                            # Guardar copia persistente en archivos_pdf para previsualización inmediata y multiusuario
+                            try:
+                                target_dir = os.path.join(DIRECTORY, "archivos_pdf")
+                                os.makedirs(target_dir, exist_ok=True)
+                                dest_path = os.path.join(target_dir, os.path.basename(filename_match))
+                                with open(dest_path, "wb") as f_dest:
+                                    f_dest.write(content)
+                            except Exception as e_save:
+                                print(f"Aviso guardando en archivos_pdf: {e_save}")
 
                             try:
                                 items_data = extractor.extract_albaran_data(temp_path, filename=filename_match)
@@ -306,6 +369,35 @@ class AlbaranHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                return
+
+        # 5. API: Guardar PDF para visualizador multiusuario
+        elif url_path == "/api/guardar_pdf" or url_path.endswith("/api/guardar_pdf"):
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length)
+
+                raw_filename = self.headers.get("X-Filename", "albaran.pdf")
+                filename = urllib.parse.unquote(raw_filename)
+                safe_name = os.path.basename(filename)
+
+                target_dir = os.path.join(DIRECTORY, "archivos_pdf")
+                os.makedirs(target_dir, exist_ok=True)
+                dest_path = os.path.join(target_dir, safe_name)
+
+                with open(dest_path, "wb") as f_dest:
+                    f_dest.write(body)
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": True, "filename": safe_name}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "error": str(e)}).encode("utf-8"))
                 return
 
         super().do_POST()
