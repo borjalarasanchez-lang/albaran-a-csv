@@ -811,9 +811,9 @@ function ensureItemDefaults(item) {
 
   // Detección estricta y autocorrección de modelo si fue erróneamente clasificado como SALTOKI
   const fnLower = (item.archivo || '').toLowerCase();
-  const isAquaferDoc = /cmr|grem|aquafer|getafe/i.test(fnLower) || 
-                       (item.numero_cmr && String(item.numero_cmr).trim() !== '' && item.numero_cmr !== '-') || 
-                       (item.numero_documento && /grem/i.test(item.numero_documento));
+  const isAquaferDoc = /aquafer|grem|guia\s*de\s*remessa|viatodos|portugal/i.test(fnLower) || 
+                       (item.numero_documento && /grem/i.test(item.numero_documento)) ||
+                       (item.proveedor_remitente && /aquafer/i.test(item.proveedor_remitente));
 
   if (isAquaferDoc) {
     if (item.modelo !== 'AQUAFER') {
@@ -845,7 +845,7 @@ function ensureItemDefaults(item) {
         wasHealed = true;
       }
       if (!item.lugar_descarga || item.lugar_descarga === '-' || item.lugar_descarga === '') {
-        item.lugar_descarga = 'CL RIO BERGANTES, GETAFE (MADRID)';
+        item.lugar_descarga = 'CL RIO BEMBEZAR 4, 28906 GETAFE';
         wasHealed = true;
       }
       if (!item.poblacion_descarga || item.poblacion_descarga === '-' || item.poblacion_descarga === '') {
@@ -881,7 +881,9 @@ function ensureItemDefaults(item) {
     item.proveedor_remitente = item.proveedor_remitente || 'APEP GROUP 2020 SL (Vélez-Málaga)';
     item.cliente_destinatario = item.cliente_destinatario || 'SALTOKI LOGISTICO EMPRESARIUM';
     item.direccion_logistico = item.direccion_logistico || 'C/CAPITANA S/N P.IND. EMPRESARIUM, 50720 CARTUJA BAJA, ZARAGOZA';
-    item.cif_cliente = item.cif_cliente || 'B56722226';
+    if (!item.cif_cliente || item.cif_cliente.includes('93730240')) {
+      item.cif_cliente = 'B56722226';
+    }
 
     if ((!item.lineas_productos || item.lineas_productos.length === 0) && (fnLower.includes('saltoki') || fnLower.includes('sf'))) {
       item.lineas_productos = [
@@ -1081,49 +1083,65 @@ async function extractDataClientSide(file) {
     }
   }
 
-  // 2. Agrupar páginas por número de documento (GREM / SF) para soportar múltiples albaranes en un mismo PDF
+  // 2. Agrupar páginas por número de documento de forma inteligente para soportar múltiples albaranes en un mismo PDF
   const groups = [];
   let currentDocId = null;
   let currentPages = [];
 
   for (let pIdx = 0; pIdx < pagesText.length; pIdx++) {
     const pTxt = pagesText[pIdx];
-    const isPureCmr = /DECLARA[CÇ][AÃ]O\s+DE\s+EXPEDI[CÇ][AÃ]O|LETTRE\s+DE\s+VOITURE|\bC\.?M\.?R\.?\s*N[ºO]/i.test(pTxt) && !/ESTE\s+DOCUMENTO\s+N[ÃA]O\s+SERVE\s+DE\s+FATURA|C[óo]d\.?\s*Artigo/i.test(pTxt);
+    const isPureCmr = /DECLARA[CÇ][AÃ]O\s+DE\s+EXPEDI[CÇ][AÃ]O|LETTRE\s+DE\s+VOITURE|\bC\.?M\.?R\.?\s*N[ºO]/i.test(pTxt) && !/ESTE\s+DOCUMENTO\s+N[ÃA]O\s+SERVE\s+DE\s+FATURA|C[óo]d\.?\s*Artigo|TAP\d+|Pedido\s*n[ºo]|SF\s*\d+/i.test(pTxt);
     if (isPureCmr && pagesText.length > 1) {
       continue;
     }
 
-    const mGrem = pTxt.match(/(?:GUIA\s+DE\s+REMESSA|GREM|GUIA\s+DE\s+TRANSPORTE)[\s\r\n]+([A-Z0-9]+[\s\-/]+[A-Z0-9\-/]+|[A-Z0-9\-/]{4,})/i);
     let docId = null;
+    const mGrem = pTxt.match(/(?:GUIA\s+DE\s+REMESSA|GREM|GUIA\s+DE\s+TRANSPORTE)[\s\r\n]*(?:N[ºO°]|NUM|#|N\.º|\.)?[\s:\-]*([A-Z0-9]+[\s\-/]+[A-Z0-9\-/]+|[A-Z0-9\-/]{4,})/i);
     if (mGrem && !/^(DATA|FECHA|PAG|CLIENTE|BANCOS)/i.test(mGrem[1])) {
       const rawId = cleanStr(mGrem[1]);
-      docId = rawId.replace(/^(GREM|GUIA\s+DE\s+REMESSA|GUIA\s+DE\s+TRANSPORTE)[\s:\-]+/i, '').trim();
+      let cleaned = rawId.replace(/^(GREM|GUIA\s+DE\s+REMESSA|GUIA\s+DE\s+TRANSPORTE)[\s:\-]+/i, '').trim();
+      docId = cleaned.toUpperCase().startsWith('GREM') ? cleaned : `GREM ${cleaned}`;
     } else {
-      const mSf = pTxt.match(/\b(SF\s*\d{6,10}|SF-\d{6,10})\b/i);
-      if (mSf) {
-        const rawId = cleanStr(mSf[1]);
-        docId = rawId.replace(/^(SF)[\s:\-]+/i, 'SF ').trim();
+      const mGremNum = pTxt.match(/\b(\d{2,3}[A-Z]\d{2}\/\d{3,6})\b/);
+      if (mGremNum) {
+        docId = `GREM ${mGremNum[1]}`;
+      } else {
+        const mSf = pTxt.match(/\b(SF\s*\d{6,10}|SF-\d{6,10})\b/i);
+        if (mSf) {
+          const rawId = cleanStr(mSf[1]);
+          docId = rawId.replace(/^(SF)[\s:\-]+/i, 'SF ').trim();
+        } else {
+          const mAlb = pTxt.match(/(?:ALBAR[AÁ]N|DOCUMENTO|N[ÚU]MERO)[\s\S]{0,35}?\b(SF\s*\d{6,10}|SF-\d{6,10}|[A-Z0-9\-/]{5,15})\b/i);
+          if (mAlb && !/^(TOTAL|BASE|IVA|FECHA|CLIENTE|APEP|SALTOKI)/i.test(mAlb[1])) {
+            docId = mAlb[1].trim();
+          }
+        }
       }
     }
 
-    if (docId) {
-      if (currentDocId === null) {
-        currentDocId = docId;
-        currentPages = [pIdx];
-      } else if (docId !== currentDocId) {
+    const isPage1 = Boolean(pTxt.match(/(?:P[AÁ]G\.?|P[AÁ]GINA)\s*1\b/i) || pTxt.match(/\b1\s*\/\s*\d+\b/));
+    const hasNewHeader = /APEP\s+GROUP\s+2020\s+SL|AQUAFER,\s+LDA|ESTE\s+DOCUMENTO\s+N[ÃA]O\s+SERVE\s+DE\s+FATURA/i.test(pTxt);
+
+    let startsNew = false;
+    if (currentPages.length === 0) {
+      startsNew = true;
+    } else if (docId && currentDocId && (docId !== currentDocId)) {
+      startsNew = true;
+    } else if (isPage1 && currentPages.length > 0) {
+      startsNew = true;
+    } else if (hasNewHeader && docId && (docId !== currentDocId)) {
+      startsNew = true;
+    }
+
+    if (startsNew) {
+      if (currentPages.length > 0) {
         groups.push({ docId: currentDocId, pageIndices: currentPages });
-        currentDocId = docId;
-        currentPages = [pIdx];
-      } else {
-        currentPages.push(pIdx);
       }
+      currentDocId = docId || `DOC_${pIdx + 1}`;
+      currentPages = [pIdx];
     } else {
-      if (currentDocId !== null) {
-        currentPages.push(pIdx);
-      } else {
-        currentDocId = `DOC_${pIdx + 1}`;
-        currentPages = [pIdx];
-      }
+      currentPages.push(pIdx);
+      if (!currentDocId && docId) currentDocId = docId;
     }
   }
 
@@ -1211,23 +1229,41 @@ async function extractDataClientSide(file) {
       }
 
       // 3. Cliente / Razón Social
-      const mCli = albText.match(/Exmo\.\/a\(s\)\s+Sr\.\/a\(s\)[\s\S]{1,150}?([A-Z0-9\s.,-]+(?:SLU|SL|SA|SAU|ZARAGOZA))/i);
-      if (mCli) {
-        data.cliente_destinatario = cleanStr(mCli[1]).replace(/^(Exmo|\d+)/i, '').trim();
+      const mCliExact = albText.match(/\b(SALTOKI\s+LOG[IÍ]STICA\s+ZARAGOZA,\s*S\.?A\.?|APEP\s+GROUP\s+2020\s+S\.?L\.?U\.?|SALTOKI\s+LOGISTICO\s+EMPRESARIUM)\b/i);
+      if (mCliExact) {
+        data.cliente_destinatario = cleanStr(mCliExact[1]);
         camposResaltados.push('cliente_destinatario');
-      } else if (/APEP\s+GROUP/i.test(albText)) {
-        data.cliente_destinatario = 'APEP GROUP 2020 SLU';
-        camposResaltados.push('cliente_destinatario');
-      } else if (/SALTOKI/i.test(albText)) {
-        data.cliente_destinatario = 'SALTOKI LOGISTICO EMPRESARIUM';
-        camposResaltados.push('cliente_destinatario');
+      } else {
+        const mCli = albText.match(/Exmo\.\/a\(s\)\s+Sr\.\/a\(s\)[\s\S]{1,150}?([A-Z0-9\s.,-]+(?:SLU|SL|SA|SAU|ZARAGOZA))/i);
+        if (mCli) {
+          let cRaw = cleanStr(mCli[1]).replace(/^(Exmo|\d+)/i, '').trim();
+          cRaw = cRaw.replace(/^(?:ESTE\s+DOCUMENTO\s+N[ÃA]O\s+SERVE\s+DE\s+FATURA|o\s+SERVE\s+DE\s+FATURA|SERVE\s+DE\s+FATURA)[,\s.:]*/i, '').trim();
+          data.cliente_destinatario = cRaw || 'SALTOKI LOGÍSTICA ZARAGOZA, SA';
+          camposResaltados.push('cliente_destinatario');
+        } else if (/APEP\s+GROUP/i.test(albText)) {
+          data.cliente_destinatario = 'APEP GROUP 2020 SLU';
+          camposResaltados.push('cliente_destinatario');
+        } else if (/SALTOKI/i.test(albText)) {
+          data.cliente_destinatario = 'SALTOKI LOGISTICO EMPRESARIUM';
+          camposResaltados.push('cliente_destinatario');
+        }
       }
 
       // 4. CIF Cliente
-      const mCif = albText.match(/\b(ES[A-Z0-9]{8,9}|[A-Z][0-9]{8})\b/i);
-      if (mCif) {
-        data.cif_cliente = cleanStr(mCif[1]).toUpperCase();
+      if (/saltoki/i.test(data.cliente_destinatario)) {
+        data.cif_cliente = (/zaragoza/i.test(data.cliente_destinatario) || /getafe/i.test(albText)) ? 'ESA50993195' : 'ESB56722226';
         camposResaltados.push('cif_cliente');
+      } else if (/apep/i.test(data.cliente_destinatario)) {
+        data.cif_cliente = 'ESB93730240';
+        camposResaltados.push('cif_cliente');
+      } else {
+        const mCif = albText.match(/\b(ES[A-Z0-9]{8,9}|[A-Z][0-9]{8})\b/i);
+        if (mCif) {
+          data.cif_cliente = cleanStr(mCif[1]).toUpperCase();
+          camposResaltados.push('cif_cliente');
+        } else {
+          data.cif_cliente = 'ESA50993195';
+        }
       }
 
       // 5. Fecha Albarán
@@ -1237,17 +1273,26 @@ async function extractDataClientSide(file) {
         camposResaltados.push('fecha_albaran_envio');
       }
 
-      // 6. Lugar y Población de Descarga
-      const mDesc = albText.match(/(?:LOCAL\s+DE\s+DESCARGA|1\.0C[ÂA]L|I„OCAL|LOCAL)[\s\S]{1,250}?(?=Morada|ATCUD|DATA|Transport|$)/i);
+      // 6. Lugar y Población de Descarga (prioriza LOCAL DE DESCARGA para evitar confundirlo con LOCAL DE CARGA)
+      let mDesc = albText.match(/(?:LOCAL\s+DE\s+DESCARGA|1\.0C[ÂA]L\s+DE\s+DESCARGA|I„OCAL\s+DE\s+DESCARGA|LOCAL\s+DESCARGA)[:\s]*([\s\S]+?)(?=Morada\s+do\s+destinat[aá]rio|Morada|ATCUD|DATA|Transport|MEIO|$)/i);
+      if (!mDesc) {
+        mDesc = albText.match(/(?:1\.0C[ÂA]L|I„OCAL|L0CAL)[:\s]*([\s\S]+?)(?=Morada\s+do\s+destinat[aá]rio|Morada|ATCUD|DATA|Transport|MEIO|$)/i);
+      }
       if (mDesc) {
-        const lines = mDesc[0].split(/\r?\n/).map(cleanStr).filter(l => l && !/^(LOCAL|1\.0C|I„|Morada|ATCUD)/i.test(l));
+        const lines = mDesc[1].split(/\r?\n/).map(cleanStr).filter(l => l && !/^(LOCAL|1\.0C|I„|Morada|ATCUD|DE\s+CARGA)/i.test(l));
         if (lines.length > 0) {
           data.lugar_descarga = lines.join(', ');
           camposResaltados.push('lugar_descarga');
           lines.forEach(l => {
-            if (/\b\d{5}\s+[A-ZÁÉÍÓÚÑ]+/i.test(l)) data.poblacion_descarga = l;
+            const cp = l.match(/\b\d{5}\s+[A-ZÁÉÍÓÚÑ]+/i);
+            if (cp) data.poblacion_descarga = cp[0];
           });
         }
+      }
+      if (!data.lugar_descarga && /getafe/i.test(albText + ' ' + fnLower)) {
+        data.lugar_descarga = 'CL RIO BEMBEZAR 4, 28906 GETAFE';
+        data.poblacion_descarga = '28906 GETAFE';
+        camposResaltados.push('lugar_descarga');
       }
 
       // 7. Notas / Instrucciones
@@ -1347,12 +1392,41 @@ async function extractDataClientSide(file) {
       // Formato SALTOKI / APEP
       data.tipo_documento = 'Albarán de Entrega';
       data.cliente_destinatario = 'SALTOKI LOGISTICO EMPRESARIUM';
-      const mSf = albText.match(/\b(SF\s*\d{6,10}|SF-\d{6,10})\b/i);
-      if (mSf) {
+
+      // 1. Nº Documento
+      const mSf = albText.match(/\b(SF\s*\d{6,10}|SF-\d{6,10})\b/i) ||
+                  albText.match(/\b(\d{2,3}[A-Z]\d{2}\/\d{3,6})\b/) ||
+                  albText.match(/(?:ALBAR[AÁ]N|DOCUMENTO|N[ÚU]MERO)[\s\S]{0,35}?\b(SF\s*\d{6,10}|SF-\d{6,10}|[A-Z0-9\-/]{5,15})\b/i) ||
+                  albText.match(/\b(ALB[_\-\s]*\d{4,10}|\d{8,10})\b/);
+      if (mSf && !/^(TOTAL|BASE|IVA|FECHA|CLIENTE|APEP|SALTOKI)/i.test(mSf[1])) {
         data.numero_documento = cleanStr(mSf[1]);
         camposResaltados.push('numero_documento');
+      } else if (grp.docId && !grp.docId.startsWith('DOC_')) {
+        data.numero_documento = grp.docId;
+        camposResaltados.push('numero_documento');
       }
-      const mPed = albText.match(/Pedido\s*(?:n[ºo]|num|número)?\s*[:\s]*([A-Z0-9\s\-_/]+?)(?:\s+de\s+fecha\s+(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})|\n|$)/i);
+
+      // 2. CIF Cliente Saltoki (garantizado siempre CIF de Saltoki, nunca vacío ni el de APEP)
+      const mSaltokiNif = albText.match(/(?:N\.?I\.?F\.?|C\.?I\.?F\.?)[\s.:\n]*\b([A-Z0-9]{8,9})\b/i);
+      if (mSaltokiNif && mSaltokiNif[1].toUpperCase() !== 'B93730240' && mSaltokiNif[1].toUpperCase() !== 'ESB93730240') {
+        data.cif_cliente = cleanStr(mSaltokiNif[1]).toUpperCase();
+      } else {
+        data.cif_cliente = (/zaragoza/i.test(data.cliente_destinatario) || /getafe/i.test(albText)) ? 'ESA50993195' : 'B56722226';
+      }
+      camposResaltados.push('cif_cliente');
+
+      // 3. CMR acompañante propagado
+      if (cmrCompanion && cmrCompanion.numero_cmr) {
+        data.numero_cmr = cmrCompanion.numero_cmr;
+        camposResaltados.push('numero_cmr');
+        if (cmrCompanion.transportista) data.transportista = cmrCompanion.transportista;
+        if (cmrCompanion.fecha_expedicion_cmr) data.fecha_expedicion_cmr = cmrCompanion.fecha_expedicion_cmr;
+      }
+
+      // 4. Pedido y Fecha Pedido
+      const mPed = albText.match(/(?:Pedido|Su\s+Pedido|N[ºO°]?\s*Pedido|S\/Pedido|N\/Pedido)\s*(?:n[ºo]|num|número)?\s*[:\s]*([A-Z0-9\s\-_/]+?)(?:\s+de\s+fecha\s+(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})|\n|$)/i) ||
+                   albText.match(/(?:enc\s*(?:n[ºo°0O]|num|no|\.|\:)?|en\s*cn[oº°0O]?)\s*[:\s]*([0-9]{5,8})/i) ||
+                   albText.match(/\b(SF\s*[-–]\s*\d{5,8})\b/i);
       if (mPed) {
         const p = cleanStr(mPed[1]);
         data.numeros_pedidos = p;
@@ -1360,11 +1434,15 @@ async function extractDataClientSide(file) {
         camposResaltados.push('numeros_pedidos');
         if (mPed[2]) data.fecha_pedido_cliente = cleanStr(mPed[2]);
       }
+
+      // 5. Fecha Albarán
       const mFecha = albText.match(/FECHA[\s\S]{1,200}?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})/i);
       if (mFecha) {
         data.fecha_albaran_envio = cleanStr(mFecha[1]);
         camposResaltados.push('fecha_albaran_envio');
       }
+
+      // 6. Lugar de entrega / descarga
       const mEntrega = albText.match(/DIRECCION\s+DE\s+ENTREGA:?\s*([\s\S]+?)(?=TOTAL|%|REC|BASE|$)/i);
       if (mEntrega) {
         const lines = mEntrega[1].split(/\r?\n/).map(cleanStr).filter(l => l && !/^(TOTAL|%|REC|BASE|IVA)/i.test(l));
@@ -1988,6 +2066,10 @@ function toggleSelectAll(model, isChecked) {
 function expandItemsToProductLines(items) {
   const expanded = [];
   items.forEach(item => {
+    if (item._is_product_row) {
+      expanded.push(Object.assign({}, item));
+      return;
+    }
     const lines = item.lineas_productos || [];
     if (lines.length > 0) {
       lines.forEach((l, idx) => {
@@ -2059,8 +2141,7 @@ async function exportMasterWorkbook() {
 
 // Descarga individual con nombre propio
 async function exportSingleItem(id) {
-  const processed = getProcessedItems(extractedItems);
-  const item = processed.find(it => it._id === id);
+  const item = extractedItems.find(it => it._id === id) || extractedItems.find(it => id && id.startsWith(it._id));
   if (!item) return;
 
   const fileName = (item.nombre_archivo_sugerido || `Albaran_${item.numero_documento || 'Extraido'}`) + '.xlsx';
@@ -2069,34 +2150,35 @@ async function exportSingleItem(id) {
 
 // ==========================================
 // COLUMNAS ESTANDARIZADAS PARA EXPORTACIÓN
+// Organizadas lógicamente: Identificación -> Pedido/Producto -> Destino -> Logística
 // ==========================================
 const COLS_CSV_PRODUCTOS_SALTOKI = [
-  { k: 'archivo', l: 'Archivo PDF', w: 24 },
   { k: 'numero_documento', l: 'Nº Albarán SF', w: 18 },
   { k: 'prod_pedido', l: 'Nº Pedido Cliente', w: 18 },
+  { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)', w: 18 },
+  { k: 'fecha_albaran_envio', l: 'Fecha Albarán', w: 14 },
+  { k: 'fecha_pedido_cliente', l: 'Fecha Pedido', w: 14 },
   { k: 'prod_linea', l: 'Línea', w: 8 },
   { k: 'prod_codigo', l: 'Código / Ref. Artículo', w: 18 },
   { k: 'prod_codigo_sec', l: 'Código Saltoki', w: 16 },
   { k: 'prod_descripcion', l: 'Descripción del Producto', w: 45 },
   { k: 'prod_cantidad', l: 'Cantidad', w: 12 },
   { k: 'prod_unidad', l: 'Unidad', w: 12 },
-  { k: 'fecha_albaran_envio', l: 'Fecha Albarán', w: 14 },
-  { k: 'fecha_pedido_cliente', l: 'Fecha Pedido', w: 14 },
   { k: 'cliente_destinatario', l: 'Cliente / Razón Social', w: 28 },
   { k: 'cif_cliente', l: 'CIF Cliente', w: 14 },
   { k: 'lugar_descarga', l: 'Lugar Entrega / Descarga', w: 38 },
   { k: 'poblacion_descarga', l: 'Población / CP', w: 18 },
   { k: 'direccion_logistico', l: 'Dirección Fiscal', w: 34 },
-  { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 28 }
+  { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 28 },
+  { k: 'archivo', l: 'Archivo PDF', w: 24 }
 ];
 
 const COLS_CSV_PRODUCTOS_AQUAFER = [
-  { k: 'archivo', l: 'Archivo PDF', w: 24 },
   { k: 'numero_documento', l: 'Nº Guía Remesa (GREM)', w: 22 },
+  { k: 'prod_pedido', l: 'Nº Pedido Cliente', w: 18 },
   { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)', w: 18 },
   { k: 'fecha_albaran_envio', l: 'Fecha Emisión Albarán', w: 16 },
   { k: 'fecha_expedicion_cmr', l: 'Fecha Expedición CMR', w: 18 },
-  { k: 'prod_pedido', l: 'Nº Pedido Cliente', w: 18 },
   { k: 'prod_linea', l: 'Línea', w: 8 },
   { k: 'prod_codigo', l: 'Código Artículo / Ref.', w: 18 },
   { k: 'prod_descripcion', l: 'Descripción del Producto', w: 48 },
@@ -2110,16 +2192,16 @@ const COLS_CSV_PRODUCTOS_AQUAFER = [
   { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 30 },
   { k: 'lugar_carga', l: 'Lugar de Carga (Portugal)', w: 34 },
   { k: 'transportista', l: 'Transportista', w: 26 },
-  { k: 'instrucciones_notas', l: 'Notas de Entrega (Español)', w: 26 }
+  { k: 'instrucciones_notas', l: 'Notas de Entrega (Español)', w: 26 },
+  { k: 'archivo', l: 'Archivo PDF', w: 24 }
 ];
 
 const COLS_CSV_PRODUCTOS_TODOS = [
-  { k: 'archivo', l: 'Archivo PDF', w: 24 },
   { k: 'modelo', l: 'Empresa / Modelo', w: 16 },
   { k: 'numero_documento', l: 'Nº Documento / Albarán', w: 22 },
+  { k: 'prod_pedido', l: 'Nº Pedido Cliente', w: 18 },
   { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)', w: 18 },
   { k: 'fecha_albaran_envio', l: 'Fecha Albarán / Emisión', w: 16 },
-  { k: 'prod_pedido', l: 'Nº Pedido Cliente', w: 18 },
   { k: 'prod_linea', l: 'Línea', w: 8 },
   { k: 'prod_codigo', l: 'Código / Ref. Artículo', w: 18 },
   { k: 'prod_codigo_sec', l: 'Código Secundario', w: 16 },
@@ -2134,13 +2216,14 @@ const COLS_CSV_PRODUCTOS_TODOS = [
   { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 28 },
   { k: 'lugar_carga', l: 'Lugar de Carga (Origen)', w: 34 },
   { k: 'transportista', l: 'Transportista', w: 26 },
-  { k: 'instrucciones_notas', l: 'Notas de Entrega', w: 26 }
+  { k: 'instrucciones_notas', l: 'Notas de Entrega', w: 26 },
+  { k: 'archivo', l: 'Archivo PDF', w: 24 }
 ];
 
 const COLS_CSV_RESUMEN_SALTOKI = [
-  { k: 'archivo', l: 'Archivo PDF', w: 24 },
   { k: 'numero_documento', l: 'Nº Albarán SF', w: 18 },
   { k: 'numeros_pedidos', l: 'Nº Pedido Cliente', w: 18 },
+  { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)', w: 18 },
   { k: 'fecha_albaran_envio', l: 'Fecha Albarán', w: 14 },
   { k: 'fecha_pedido_cliente', l: 'Fecha Pedido', w: 14 },
   { k: 'total_unidades', l: 'Total Unidades', w: 14 },
@@ -2151,14 +2234,14 @@ const COLS_CSV_RESUMEN_SALTOKI = [
   { k: 'lugar_descarga', l: 'Lugar Entrega / Descarga', w: 38 },
   { k: 'poblacion_descarga', l: 'Población / CP', w: 18 },
   { k: 'direccion_logistico', l: 'Dirección Fiscal', w: 34 },
-  { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 28 }
+  { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 28 },
+  { k: 'archivo', l: 'Archivo PDF', w: 24 }
 ];
 
 const COLS_CSV_RESUMEN_AQUAFER = [
-  { k: 'archivo', l: 'Archivo PDF', w: 24 },
   { k: 'numero_documento', l: 'Nº Guía Remesa (GREM)', w: 22 },
-  { k: 'numero_cmr', l: 'Nº Carta de Porte (CMR)', w: 18 },
   { k: 'numeros_pedidos', l: 'Nº Pedidos Cliente', w: 22 },
+  { k: 'numero_cmr', l: 'Nº Carta de Porte (CMR)', w: 18 },
   { k: 'fecha_albaran_envio', l: 'Fecha Emisión Albarán', w: 16 },
   { k: 'fecha_expedicion_cmr', l: 'Fecha Expedición CMR', w: 18 },
   { k: 'total_unidades', l: 'Total Unidades', w: 14 },
@@ -2172,15 +2255,15 @@ const COLS_CSV_RESUMEN_AQUAFER = [
   { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 32 },
   { k: 'lugar_carga', l: 'Lugar de Carga (Origen Portugal)', w: 35 },
   { k: 'transportista', l: 'Transportista', w: 28 },
-  { k: 'instrucciones_notas', l: 'Notas de Entrega (Español)', w: 26 }
+  { k: 'instrucciones_notas', l: 'Notas de Entrega (Español)', w: 26 },
+  { k: 'archivo', l: 'Archivo PDF', w: 24 }
 ];
 
 const COLS_CSV_RESUMEN_TODOS = [
-  { k: 'archivo', l: 'Archivo PDF', w: 24 },
   { k: 'modelo', l: 'Empresa / Modelo', w: 16 },
   { k: 'numero_documento', l: 'Nº Documento / Albarán', w: 22 },
-  { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)', w: 18 },
   { k: 'numeros_pedidos', l: 'Nº Pedidos Cliente', w: 22 },
+  { k: 'numero_cmr', l: 'Nº Carta Porte (CMR)', w: 18 },
   { k: 'fecha_albaran_envio', l: 'Fecha Albarán / Emisión', w: 16 },
   { k: 'total_unidades', l: 'Total Unidades', w: 14 },
   { k: 'total_lineas', l: 'Total Líneas', w: 12 },
@@ -2193,7 +2276,8 @@ const COLS_CSV_RESUMEN_TODOS = [
   { k: 'proveedor_remitente', l: 'Proveedor Remitente', w: 30 },
   { k: 'lugar_carga', l: 'Lugar de Carga (Origen)', w: 34 },
   { k: 'transportista', l: 'Transportista', w: 26 },
-  { k: 'instrucciones_notas', l: 'Notas de Entrega', w: 26 }
+  { k: 'instrucciones_notas', l: 'Notas de Entrega', w: 26 },
+  { k: 'archivo', l: 'Archivo PDF', w: 24 }
 ];
 
 // Helper para limpiar objetos antes de convertirlos a JSON (evita errores de circularidad)

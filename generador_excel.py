@@ -26,35 +26,35 @@ def clean_str(val: Any) -> str:
 
 # ==========================================
 # COLUMNAS DETALLE DE PRODUCTOS (LÍNEAS)
-# Organizadas lógicamente: Documento -> Pedido/Producto -> Destino -> Origen/Logística
+# Organizadas lógicamente: Identificación -> Pedido/Producto -> Destino -> Logística
 # ==========================================
 COLUMNAS_PRODUCTOS_SALTOKI = [
-    ("archivo", "Archivo PDF", 24),
     ("numero_documento", "Nº Albarán SF", 18),
     ("prod_pedido", "Nº Pedido Cliente", 18),
+    ("numero_cmr", "Nº Carta Porte (CMR)", 18),
+    ("fecha_albaran_envio", "Fecha Albarán", 14),
+    ("fecha_pedido_cliente", "Fecha Pedido", 14),
     ("prod_linea", "Línea", 8),
     ("prod_codigo", "Código / Ref. Artículo", 18),
     ("prod_codigo_sec", "Código Saltoki", 16),
     ("prod_descripcion", "Descripción del Producto", 45),
     ("prod_cantidad", "Cantidad", 12),
     ("prod_unidad", "Unidad", 12),
-    ("fecha_albaran_envio", "Fecha Albarán", 14),
-    ("fecha_pedido_cliente", "Fecha Pedido", 14),
     ("cliente_destinatario", "Cliente / Razón Social", 28),
     ("cif_cliente", "CIF Cliente", 14),
     ("lugar_descarga", "Lugar Entrega / Descarga", 38),
     ("poblacion_descarga", "Población / CP", 18),
     ("direccion_logistico", "Dirección Fiscal", 34),
-    ("proveedor_remitente", "Proveedor Remitente", 28)
+    ("proveedor_remitente", "Proveedor Remitente", 28),
+    ("archivo", "Archivo PDF", 24)
 ]
 
 COLUMNAS_PRODUCTOS_AQUAFER = [
-    ("archivo", "Archivo PDF", 24),
     ("numero_documento", "Nº Guía Remesa (GREM)", 22),
+    ("prod_pedido", "Nº Pedido Cliente", 18),
     ("numero_cmr", "Nº Carta Porte (CMR)", 18),
     ("fecha_albaran_envio", "Fecha Emisión Albarán", 16),
     ("fecha_expedicion_cmr", "Fecha Expedición CMR", 18),
-    ("prod_pedido", "Nº Pedido Cliente", 18),
     ("prod_linea", "Línea", 8),
     ("prod_codigo", "Código Artículo / Ref.", 18),
     ("prod_descripcion", "Descripción del Producto", 48),
@@ -68,16 +68,16 @@ COLUMNAS_PRODUCTOS_AQUAFER = [
     ("proveedor_remitente", "Proveedor Remitente", 30),
     ("lugar_carga", "Lugar de Carga (Portugal)", 34),
     ("transportista", "Transportista", 26),
-    ("instrucciones_notas", "Notas de Entrega (Español)", 26)
+    ("instrucciones_notas", "Notas de Entrega (Español)", 26),
+    ("archivo", "Archivo PDF", 24)
 ]
 
 COLUMNAS_PRODUCTOS_TODOS = [
-    ("archivo", "Archivo PDF", 24),
     ("modelo", "Empresa / Modelo", 16),
     ("numero_documento", "Nº Documento / Albarán", 22),
+    ("prod_pedido", "Nº Pedido Cliente", 18),
     ("numero_cmr", "Nº Carta Porte (CMR)", 18),
     ("fecha_albaran_envio", "Fecha Albarán / Emisión", 16),
-    ("prod_pedido", "Nº Pedido Cliente", 18),
     ("prod_linea", "Línea", 8),
     ("prod_codigo", "Código / Ref. Artículo", 18),
     ("prod_codigo_sec", "Código Secundario", 16),
@@ -92,7 +92,8 @@ COLUMNAS_PRODUCTOS_TODOS = [
     ("proveedor_remitente", "Proveedor Remitente", 28),
     ("lugar_carga", "Lugar de Carga (Origen)", 34),
     ("transportista", "Transportista", 26),
-    ("instrucciones_notas", "Notas de Entrega", 26)
+    ("instrucciones_notas", "Notas de Entrega", 26),
+    ("archivo", "Archivo PDF", 24)
 ]
 
 # ==========================================
@@ -100,9 +101,9 @@ COLUMNAS_PRODUCTOS_TODOS = [
 # Organizadas lógicamente: Identificación -> Pedidos -> Totales -> Destino -> Origen
 # ==========================================
 COLUMNAS_RESUMEN_SALTOKI = [
-    ("archivo", "Archivo PDF", 24),
     ("numero_documento", "Nº Albarán SF", 18),
     ("numeros_pedidos", "Nº Pedido Cliente", 18),
+    ("numero_cmr", "Nº Carta Porte (CMR)", 18),
     ("fecha_albaran_envio", "Fecha Albarán", 14),
     ("fecha_pedido_cliente", "Fecha Pedido", 14),
     ("total_unidades", "Total Unidades", 14),
@@ -113,14 +114,14 @@ COLUMNAS_RESUMEN_SALTOKI = [
     ("lugar_descarga", "Lugar Entrega / Descarga", 38),
     ("poblacion_descarga", "Población / CP", 18),
     ("direccion_logistico", "Dirección Fiscal", 34),
-    ("proveedor_remitente", "Proveedor Remitente", 28)
+    ("proveedor_remitente", "Proveedor Remitente", 28),
+    ("archivo", "Archivo PDF", 24)
 ]
 
 COLUMNAS_RESUMEN_AQUAFER = [
-    ("archivo", "Archivo PDF", 24),
     ("numero_documento", "Nº Guía Remesa (GREM)", 22),
-    ("numero_cmr", "Nº Carta de Porte (CMR)", 18),
     ("numeros_pedidos", "Nº Pedidos Cliente", 22),
+    ("numero_cmr", "Nº Carta de Porte (CMR)", 18),
     ("fecha_albaran_envio", "Fecha Emisión Albarán", 16),
     ("fecha_expedicion_cmr", "Fecha Expedición CMR", 18),
     ("total_unidades", "Total Unidades", 14),
@@ -134,15 +135,15 @@ COLUMNAS_RESUMEN_AQUAFER = [
     ("proveedor_remitente", "Proveedor Remitente", 32),
     ("lugar_carga", "Lugar de Carga (Origen Portugal)", 35),
     ("transportista", "Transportista", 28),
-    ("instrucciones_notas", "Notas de Entrega (Español)", 26)
+    ("instrucciones_notas", "Notas de Entrega (Español)", 26),
+    ("archivo", "Archivo PDF", 24)
 ]
 
 COLUMNAS_RESUMEN_TODOS = [
-    ("archivo", "Archivo PDF", 24),
     ("modelo", "Empresa / Modelo", 16),
     ("numero_documento", "Nº Documento / Albarán", 22),
-    ("numero_cmr", "Nº Carta Porte (CMR)", 18),
     ("numeros_pedidos", "Nº Pedidos Cliente", 22),
+    ("numero_cmr", "Nº Carta Porte (CMR)", 18),
     ("fecha_albaran_envio", "Fecha Albarán / Emisión", 16),
     ("total_unidades", "Total Unidades", 14),
     ("total_lineas", "Total Líneas", 12),
@@ -155,7 +156,8 @@ COLUMNAS_RESUMEN_TODOS = [
     ("proveedor_remitente", "Proveedor Remitente", 30),
     ("lugar_carga", "Lugar de Carga (Origen)", 34),
     ("transportista", "Transportista", 26),
-    ("instrucciones_notas", "Notas de Entrega", 26)
+    ("instrucciones_notas", "Notas de Entrega", 26),
+    ("archivo", "Archivo PDF", 24)
 ]
 
 
@@ -163,6 +165,9 @@ def _expand_items_to_lines(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
   """Desglosa cada albarán en sus líneas de productos individuales."""
   expanded = []
   for item in items:
+    if item.get("_is_product_row"):
+      expanded.append(dict(item))
+      continue
     lines = item.get("lineas_productos", [])
     if lines:
       for l in lines:

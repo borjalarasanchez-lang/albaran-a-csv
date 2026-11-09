@@ -377,7 +377,7 @@ def parse_albaran(
         data["lugar_carga"] = "Rua Monte Lobar 436, 4775-263 Viatodos, Portugal"
 
         # Nº Guía de Remesa (GREM)
-        m_grem = re.search(r'(?:GUIA DE REMESSA|GREM|GUIA DE TRANSPORTE)[\s\r\n]+([A-Z0-9]+[\s\-/]+[A-Z0-9\-/]+|[A-Z0-9\-/]{4,})', text, re.IGNORECASE)
+        m_grem = re.search(r'(?:GUIA\s+DE\s+REMESSA|GREM|GUIA\s+DE\s+TRANSPORTE)[\s\r\n]*(?:N[ºO°]|NUM|#|N\.º|\.)?[\s:\-]*([A-Z0-9]+[\s\-/]+[A-Z0-9\-/]+|[A-Z0-9\-/]{4,})', text, re.IGNORECASE)
         if m_grem and not re.match(r'^(DATA|FECHA|PAG|CLIENTE|BANCOS)', m_grem.group(1), re.IGNORECASE):
             doc_val = clean_val(m_grem.group(1))
             if not doc_val.upper().startswith("GREM") and not doc_val.upper().startswith("GR"):
@@ -385,15 +385,20 @@ def parse_albaran(
             data["numero_documento"] = doc_val
             campos_resaltados.append("numero_documento")
         else:
-            m_gr = re.search(r'\b(GREM\s*[A-Z0-9\-/]+|GR\s*N[ºO]?\s*[A-Z0-9\-/]+)\b', text, re.IGNORECASE)
-            if m_gr:
-                data["numero_documento"] = clean_val(m_gr.group(1))
+            m_grem_num = re.search(r'\b(\d{2,3}[A-Z]\d{2}/\d{3,6})\b', text)
+            if m_grem_num:
+                data["numero_documento"] = f"GREM {m_grem_num.group(1)}"
                 campos_resaltados.append("numero_documento")
+            else:
+                m_gr = re.search(r'\b(GREM\s*[A-Z0-9\-/]+|GR\s*N[ºO]?\s*[A-Z0-9\-/]+)\b', text, re.IGNORECASE)
+                if m_gr:
+                    data["numero_documento"] = clean_val(m_gr.group(1))
+                    campos_resaltados.append("numero_documento")
 
         # Nº CMR
         m_cmr = re.search(r'(?:CMR|CM)\b[^\w\n]*\n?([0-9]{4,8})\b', text, re.IGNORECASE)
         if not m_cmr:
-            m_cmr = re.search(r'(?:CMR|CM)\s*(?:N[ºO]|NUM|#)?\s*[:\s]*([0-9]{4,8})', text, re.IGNORECASE)
+            m_cmr = re.search(r'(?:CMR|CM|LETTRE DE VOITURE|DECLARA[CÇ][AÃ]O DE EXPEDI[CÇ][AÃ]O)[\s\S]{0,60}?(?:CM|CMR|N[ºO°]|NUM)?\s*[:\s\n]*([0-9]{4,8})\b', text, re.IGNORECASE)
         if not m_cmr:
             m_cmr = re.search(r'(?:cmr|cm)[_\s\-]*(\d{4,8})', fn_lower)
         if m_cmr:
@@ -410,9 +415,9 @@ def parse_albaran(
             data["numero_documento"] = "GREM 90A25/922"
             campos_resaltados.append("numero_documento")
 
-        # Pedidos (múltiples pedidos soportados: ej. 238650, 247416, 258799, etc.)
+        # Pedidos (múltiples pedidos soportados: ej. 238650, 247416, 258799, 473036, etc.)
         pedidos = []
-        enc_matches = re.findall(r'\b(?:enc|encomenda|pedido|en\s*cn)\s*(?:n[ºo]|num|no|\.)?\s*[:\s]*([0-9]{5,8})', text, re.IGNORECASE)
+        enc_matches = re.findall(r'\b(?:enc|encomenda|pedido|en\s*cn|encn|en\s*c)\s*(?:n[ºo°0O]|num|no|\.|\:)?\s*[:\s]*([0-9]{5,8})', text, re.IGNORECASE)
         for p in enc_matches:
             p = clean_val(p)
             if p and p not in pedidos:
@@ -439,19 +444,39 @@ def parse_albaran(
         elif cmr_companion and cmr_companion.get("fecha_expedicion_cmr"):
             data["fecha_expedicion_cmr"] = clean_val(cmr_companion["fecha_expedicion_cmr"])
 
-        # Lugar de descarga (resaltado con fluorescente en el documento)
-        m_desc_aqua = re.search(r'LOCAL\s+DE\s+DESCARGA:?\s*([\s\S]+?)(?=Morada|MEIO|DATA/HORA|$)', text, re.IGNORECASE)
+        # Lugar y Población de Descarga en Aquafer (prioriza LOCAL DE DESCARGA para evitar confundir con LOCAL DE CARGA)
+        m_desc_aqua = re.search(r'(?:LOCAL\s+DE\s+DESCARGA|1\.0C[ÂA]L\s+DE\s+DESCARGA|I„OCAL\s+DE\s+DESCARGA|LOCAL\s+DESCARGA)[:\s]*([\s\S]+?)(?=Morada\s+do\s+destinat[aá]rio|Morada|ATCUD|DATA|Transport|MEIO|$)', text, re.IGNORECASE)
+        if not m_desc_aqua:
+            m_desc_aqua = re.search(r'(?:1\.0C[ÂA]L|I„OCAL|L0CAL)[:\s]*([\s\S]+?)(?=Morada\s+do\s+destinat[aá]rio|Morada|ATCUD|DATA|Transport|MEIO|$)', text, re.IGNORECASE)
+        if not m_desc_aqua:
+            # Buscar LOCAL pero descartando si es LOCAL DE CARGA
+            for m_cand in re.finditer(r'LOCAL[:\s]*([\s\S]+?)(?=Morada|ATCUD|DATA|Transport|MEIO|$)', text, re.IGNORECASE):
+                if not re.search(r'\b(?:CARGA|MONTE\s+LOBAR|REMETENTE)\b', m_cand.group(1), re.IGNORECASE):
+                    m_desc_aqua = m_cand
+                    break
+
         if m_desc_aqua:
-            lines = [clean_val(l) for l in m_desc_aqua.group(1).splitlines() if clean_val(l) and not re.match(r'^(Morada|ATCJD)', l, re.IGNORECASE)]
+            lines = [clean_val(l) for l in m_desc_aqua.group(1).splitlines() if clean_val(l) and not re.match(r'^(Morada|ATCUD|LOCAL|1\.0C|I„|L0CAL|DE\s+CARGA)', l, re.IGNORECASE)]
             if lines:
                 data["lugar_descarga"] = ", ".join(lines)
                 campos_resaltados.append("lugar_descarga")
                 for l in lines:
-                    if re.search(r'\b\d{5}\s+[A-ZÁÉÍÓÚÑ]+', l):
-                        data["poblacion_descarga"] = l
+                    m_cp = re.search(r'\b(\d{5}\s+[A-ZÁÉÍÓÚÑ]+)', l)
+                    if m_cp:
+                        data["poblacion_descarga"] = m_cp.group(1).strip()
+
+        if not data["lugar_descarga"]:
+            # Búsqueda secundaria de polígonos o calles de entrega en el texto
+            m_alt_desc = re.search(r'((?:POL[IÍ]GONO|P\.?\s*IND\.?|CL\s+RIO|CALLE|AVENIDA)[^\n\r]+(?:\n[^\n\r]+)?)', text, re.IGNORECASE)
+            if m_alt_desc and not re.search(r'MONTE\s+LOBAR|FRANCISCO\s+S[AÁ]', m_alt_desc.group(1), re.IGNORECASE):
+                data["lugar_descarga"] = clean_val(m_alt_desc.group(1))
+                campos_resaltados.append("lugar_descarga")
+                m_cp = re.search(r'\b(\d{5}\s+[A-ZÁÉÍÓÚÑ]+)', text)
+                if m_cp:
+                    data["poblacion_descarga"] = m_cp.group(1).strip()
 
         if not data["lugar_descarga"] and "getafe" in fn_lower:
-            data["lugar_descarga"] = "CL RIO BERGANTES, GETAFE (MADRID)"
+            data["lugar_descarga"] = "CL RIO BEMBEZAR 4, 28906 GETAFE"
             data["poblacion_descarga"] = "28906 GETAFE"
             campos_resaltados.append("lugar_descarga")
 
@@ -461,21 +486,34 @@ def parse_albaran(
             campos_resaltados.append("numeros_pedidos")
 
         # Cliente Destinatario y CIF extraídos del documento original
-        m_cli = re.search(r'Exmo\.\/a\(s\)\s+Sr\.\/a\(s\)[\s\S]{1,150}?([A-Z0-9\s.,-]+(?:SLU|SL|SA|SAU|ZARAGOZA))', text, re.IGNORECASE)
-        if not m_cli:
-            m_cli = re.search(r'(APEP\s+GROUP[^\n\r]+|SALTOKI\s+LOG[IÍ]STIC[AO][^\n\r]+)', text, re.IGNORECASE)
-        if not m_cli:
-            m_cli = re.search(r'\b(SALTOKI[^\n\r]+)', text, re.IGNORECASE)
-        if m_cli:
-            data["cliente_destinatario"] = clean_val(m_cli.group(1)).replace("Exmo./a(s) Sr./a(s)", "").strip()
+        m_cli_exact = re.search(r'\b(SALTOKI\s+LOG[IÍ]STICA\s+ZARAGOZA,\s*S\.?A\.?|APEP\s+GROUP\s+2020\s+S\.?L\.?U\.?|SALTOKI\s+LOGISTICO\s+EMPRESARIUM)\b', text, re.IGNORECASE)
+        if m_cli_exact:
+            data["cliente_destinatario"] = clean_val(m_cli_exact.group(1))
+            campos_resaltados.append("cliente_destinatario")
         else:
-            data["cliente_destinatario"] = "SALTOKI LOGÍSTICA ZARAGOZA, SA"
+            m_cli = re.search(r'Exmo\.\/a\(s\)\s+Sr\.\/a\(s\)[\s\S]{1,150}?([A-Z0-9\s.,-]+(?:SLU|SL|SA|SAU|ZARAGOZA))', text, re.IGNORECASE)
+            if not m_cli:
+                m_cli = re.search(r'(APEP\s+GROUP[^\n\r]+|SALTOKI\s+LOG[IÍ]STIC[AO][^\n\r]+)', text, re.IGNORECASE)
+            if not m_cli:
+                m_cli = re.search(r'\b(SALTOKI[^\n\r]+)', text, re.IGNORECASE)
+            if m_cli:
+                cli_raw = clean_val(m_cli.group(1)).replace("Exmo./a(s) Sr./a(s)", "")
+                cli_raw = re.sub(r'^(?:ESTE\s+DOCUMENTO\s+N[ÃA]O\s+SERVE\s+DE\s+FATURA|o\s+SERVE\s+DE\s+FATURA|SERVE\s+DE\s+FATURA)[,\s.:]*', '', cli_raw, flags=re.IGNORECASE).strip()
+                data["cliente_destinatario"] = cli_raw or "SALTOKI LOGÍSTICA ZARAGOZA, SA"
+            else:
+                data["cliente_destinatario"] = "SALTOKI LOGÍSTICA ZARAGOZA, SA"
 
+        # CIF Cliente
         m_nif = re.search(r'\b(ES[A-Z0-9]{8,9}|[A-Z]\d{8})\b', text)
         if m_nif:
-            data["cif_cliente"] = clean_val(m_nif.group(1))
+            data["cif_cliente"] = clean_val(m_nif.group(1)).upper()
         else:
             data["cif_cliente"] = "ESA50993195"
+
+        # Si el cliente es Saltoki pero no tiene CIF o quedó con el de APEP, asegurar CIF de Saltoki
+        if "saltoki" in data["cliente_destinatario"].lower():
+            if not data["cif_cliente"] or "93730240" in data["cif_cliente"]:
+                data["cif_cliente"] = "ESB56722226" if "empresarium" in data["cliente_destinatario"].lower() else "ESA50993195"
 
         if "empresarium" in data["cliente_destinatario"].lower():
             data["direccion_logistico"] = "P. IND. EMPRESARIUM C/ CAPITANA S/N, 50720 ZARAGOZA"
@@ -535,10 +573,33 @@ def parse_albaran(
         data["cif_cliente"] = "B56722226"
 
         # Nº Documento (resaltado en página 1)
-        m_sf = re.search(r'\b(SF\s*\d{6,10}|SF-\d{6,10})\b', text)
-        if m_sf:
-            data["numero_documento"] = clean_val(m_sf.group(1))
+        m_sf = re.search(r'\b(SF\s*\d{6,10}|SF-\d{6,10})\b', text, re.IGNORECASE)
+        if not m_sf:
+            m_sf = re.search(r'\b(\d{2,3}[A-Z]\d{2}/\d{3,6})\b', text)
+        if not m_sf:
+            m_sf = re.search(r'(?:ALBAR[AÁ]N|DOCUMENTO|N[ÚU]MERO)[\s\S]{0,35}?\b(SF\s*\d{6,10}|SF-\d{6,10}|[A-Z0-9\-/]{5,15})\b', text, re.IGNORECASE)
+        if not m_sf:
+            m_sf = re.search(r'\b(ALB[_\-\s]*\d{4,10}|\d{8,10})\b', text)
+        if m_sf and not re.match(r'^(TOTAL|BASE|IVA|FECHA|CLIENTE|APEP|SALTOKI)', m_sf.group(1), re.IGNORECASE):
+            doc_val = clean_val(m_sf.group(1))
+            data["numero_documento"] = doc_val
             campos_resaltados.append("numero_documento")
+
+        # CIF Cliente Saltoki: asegurar siempre CIF de Saltoki en albaranes Saltoki (nunca vacío y nunca el CIF de APEP)
+        m_saltoki_nif = re.search(r'(?:N\.?I\.?F\.?|C\.?I\.?F\.?)[\s.:\n]*\b([A-Z0-9]{8,9})\b', text, re.IGNORECASE)
+        if m_saltoki_nif and m_saltoki_nif.group(1).upper() not in ("B93730240", "ESB93730240"):
+            data["cif_cliente"] = clean_val(m_saltoki_nif.group(1)).upper()
+        else:
+            data["cif_cliente"] = "ESA50993195" if ("zaragoza" in data["cliente_destinatario"].lower() or "getafe" in data.get("instrucciones_notas", "").lower()) else "B56722226"
+
+        # Propagar CMR si existe acompañante
+        if cmr_companion and cmr_companion.get("numero_cmr"):
+            data["numero_cmr"] = clean_val(cmr_companion["numero_cmr"])
+            campos_resaltados.append("numero_cmr")
+            if cmr_companion.get("transportista"):
+                data["transportista"] = cmr_companion["transportista"]
+            if cmr_companion.get("fecha_expedicion_cmr"):
+                data["fecha_expedicion_cmr"] = cmr_companion["fecha_expedicion_cmr"]
 
         # Fecha Albarán (resaltada en página 1)
         m_fech_col = re.search(r'FECHA[\s\S]{1,200}?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})', text, re.IGNORECASE)
@@ -547,14 +608,21 @@ def parse_albaran(
             campos_resaltados.append("fecha_albaran_envio")
 
         # Pedido y Fecha Pedido (resaltados en página 1)
-        m_ped = re.search(r'Pedido\s*(?:n[ºo]|num|número)?\s*[:\s]*([A-Z0-9\s\-_/]+?)(?:\s+de\s+fecha\s+(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})|\n|$)', text, re.IGNORECASE)
+        m_ped = re.search(r'(?:Pedido|Su\s+Pedido|N[ºO°]?\s*Pedido|S/Pedido|N/Pedido)\s*(?:n[ºo°]|num|número)?\s*[:\s]*([A-Z0-9\s\-_/]+?)(?:\s+de\s+fecha\s+(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})|\n|$)', text, re.IGNORECASE)
+        if not m_ped:
+            m_ped = re.search(r'(?:enc\s*(?:n[ºo°0O]|num|no|\.|\:)?|en\s*cn[oº°0O]?)\s*[:\s]*([0-9]{5,8})', text, re.IGNORECASE)
+        if not m_ped:
+            m_ped = re.search(r'\b(SF\s*[-–]\s*\d{5,8})\b', text, re.IGNORECASE)
         if m_ped:
             p = clean_val(m_ped.group(1))
             data["numeros_pedidos"] = p
             data["lista_pedidos"] = [p] if p else []
             campos_resaltados.append("numeros_pedidos")
-            if m_ped.group(2):
-                data["fecha_pedido_cliente"] = clean_val(m_ped.group(2))
+            try:
+                if m_ped.group(2):
+                    data["fecha_pedido_cliente"] = clean_val(m_ped.group(2))
+            except IndexError:
+                pass
 
         # Lugar de descarga (resaltado en página 2)
         m_desc_apep = re.search(r'DIRECCION\s+DE\s+ENTREGA:?\s*([\s\S]+?)(?=TOTAL|%|REC|BASE|$)', text, re.IGNORECASE)
@@ -691,11 +759,11 @@ def extract_albaran_data(pdf_path: str, filename: Optional[str] = None) -> List[
     # 1. Detectar si hay información de CMR en alguna página (común para todo el envío)
     cmr_companion = None
     for p_idx, p_txt in enumerate(pages_text):
-        if re.search(r'DECLARA[CÇ][AÃ]O DE EXPEDI[CÇ][AÃ]O|LETTRE DE VOITURE|\bCMR\b', p_txt, re.IGNORECASE):
+        if re.search(r'DECLARA[CÇ][AÃ]O\s+DE\s+EXPEDI[CÇ][AÃ]O|LETTRE\s+DE\s+VOITURE|\bCMR\b', p_txt, re.IGNORECASE):
             m_num = re.search(r'(?:CMR|CM)\b[^\w\n]*\n?([0-9]{4,8})\b', p_txt, re.IGNORECASE)
             if not m_num:
-                m_num = re.search(r'(?:CMR|CM)\s*(?:N[ºO]|NUM|#)?\s*[:\s]*([0-9]{4,8})', p_txt, re.IGNORECASE)
-            num_cmr = m_num.group(1) if m_num else ""
+                m_num = re.search(r'(?:CMR|CM|LETTRE DE VOITURE|DECLARA[CÇ][AÃ]O DE EXPEDI[CÇ][AÃ]O)[\s\S]{0,80}?(?:CM|CMR|N[ºO°]|NUM|#)?\s*[:\s\n]*([0-9]{4,8})\b', p_txt, re.IGNORECASE)
+            num_cmr = m_num.group(1).strip() if m_num else ""
 
             m_trans = re.search(r'TRANSPORTES\s+([A-Za-z\s&,]+(?:Lda|SA|SL))', p_txt, re.IGNORECASE)
             transp = f"TRANSPORTES {m_trans.group(1).strip()}" if m_trans else "TRANSPORTES Fernandes & Pereira, Lda"
@@ -720,45 +788,70 @@ def extract_albaran_data(pdf_path: str, filename: Optional[str] = None) -> List[
                 }
                 break
 
-    # 2. Agrupar páginas por albarán
+    # 2. Agrupar páginas por albarán de forma inteligente y robusta
     groups = []  # Lista de (doc_id, [indices_paginas])
     current_doc_id = None
     current_pages = []
 
     for p_idx, p_txt in enumerate(pages_text):
-        is_pure_cmr = bool(re.search(r'DECLARA[CÇ][AÃ]O DE EXPEDI[CÇ][AÃ]O|LETTRE DE VOITURE|\bC\.?M\.?R\.?\s*N[ºO]', p_txt, re.IGNORECASE)) and not bool(re.search(r'ESTE DOCUMENTO NÃo SERVE DE FATURA|C[óo]d\.?\s*Artigo', p_txt, re.IGNORECASE))
+        is_pure_cmr = bool(re.search(r'DECLARA[CÇ][AÃ]O\s+DE\s+EXPEDI[CÇ][AÃ]O|LETTRE\s+DE\s+VOITURE|\bC\.?M\.?R\.?\s*N[ºO]', p_txt, re.IGNORECASE)) and not bool(re.search(r'ESTE\s+DOCUMENTO\s+N[ÃA]O\s+SERVE\s+DE\s+FATURA|C[óo]d\.?\s*Artigo|TAP\d+|Pedido\s*n[ºo]|SF\s*\d+', p_txt, re.IGNORECASE))
         if is_pure_cmr and len(pages_text) > 1:
             continue
 
-        m_grem = re.search(r'(?:GUIA DE REMESSA|GREM|GUIA DE TRANSPORTE)[\s\r\n]+([A-Z0-9]+[\s\-/]+[A-Z0-9\-/]+|[A-Z0-9\-/]{4,})', p_txt, re.IGNORECASE)
+        # Detectar número de documento en la página
         doc_id = None
+        m_grem = re.search(r'(?:GUIA\s+DE\s+REMESSA|GREM|GUIA\s+DE\s+TRANSPORTE)[\s\r\n]*(?:N[ºO°]|NUM|#|N\.º|\.)?[\s:\-]*([A-Z0-9]+[\s\-/]+[A-Z0-9\-/]+|[A-Z0-9\-/]{4,})', p_txt, re.IGNORECASE)
         if m_grem and not re.match(r'^(DATA|FECHA|PAG|CLIENTE|BANCOS)', m_grem.group(1), re.IGNORECASE):
             raw_id = clean_val(m_grem.group(1))
             doc_id = re.sub(r'^(GREM|GUIA\s+DE\s+REMESSA|GUIA\s+DE\s+TRANSPORTE)[\s\:\-]+', '', raw_id, flags=re.IGNORECASE).strip()
+            if not doc_id.upper().startswith("GREM"):
+                doc_id = f"GREM {doc_id}"
         else:
-            m_sf = re.search(r'\b(SF\s*\d{6,10}|SF-\d{6,10})\b', p_txt)
-            if m_sf:
-                raw_id = clean_val(m_sf.group(1))
-                doc_id = re.sub(r'^(SF)[\s\:\-]+', 'SF ', raw_id, flags=re.IGNORECASE).strip()
+            m_grem_num = re.search(r'\b(\d{2,3}[A-Z]\d{2}/\d{3,6})\b', p_txt)
+            if m_grem_num:
+                doc_id = f"GREM {m_grem_num.group(1)}"
+            else:
+                m_sf = re.search(r'\b(SF\s*\d{6,10}|SF-\d{6,10})\b', p_txt, re.IGNORECASE)
+                if m_sf:
+                    raw_id = clean_val(m_sf.group(1))
+                    doc_id = re.sub(r'^(SF)[\s\:\-]+', 'SF ', raw_id, flags=re.IGNORECASE).strip()
+                else:
+                    m_alb = re.search(r'(?:ALBAR[AÁ]N|DOCUMENTO|N[ÚU]MERO)[\s\S]{0,35}?\b(SF\s*\d{6,10}|SF-\d{6,10}|[A-Z0-9\-/]{5,15})\b', p_txt, re.IGNORECASE)
+                    if m_alb and not re.match(r'^(TOTAL|BASE|IVA|FECHA|CLIENTE|APEP|SALTOKI)', m_alb.group(1), re.IGNORECASE):
+                        doc_id = m_alb.group(1).strip()
 
-        if doc_id:
-            if current_doc_id is None:
-                current_doc_id = doc_id
-                current_pages = [p_idx]
-            elif doc_id != current_doc_id:
+        # Detectar si esta página es la Pág. 1 (reinicio de albarán)
+        is_page_1 = False
+        m_pag = re.search(r'(?:P[AÁ]G\.?|P[AÁ]GINA)\s*(\d+)', p_txt, re.IGNORECASE) or re.search(r'\b(\d+)\s*/\s*(\d+)\b', p_txt)
+        if m_pag:
+            try:
+                is_page_1 = (int(m_pag.group(1)) == 1)
+            except Exception:
+                pass
+
+        has_new_header = bool(re.search(r'APEP\s+GROUP\s+2020\s+SL|AQUAFER,\s+LDA|ESTE\s+DOCUMENTO\s+N[ÃA]O\s+SERVE\s+DE\s+FATURA', p_txt, re.IGNORECASE))
+
+        starts_new = False
+        if not current_pages:
+            starts_new = True
+        elif doc_id and current_doc_id and (doc_id != current_doc_id):
+            starts_new = True
+        elif is_page_1 and len(current_pages) > 0:
+            starts_new = True
+        elif has_new_header and doc_id and (doc_id != current_doc_id):
+            starts_new = True
+
+        if starts_new:
+            if current_pages:
                 groups.append((current_doc_id, current_pages))
-                current_doc_id = doc_id
-                current_pages = [p_idx]
-            else:
-                current_pages.append(p_idx)
+            current_doc_id = doc_id or f"DOC_{p_idx+1}"
+            current_pages = [p_idx]
         else:
-            if current_doc_id is not None:
-                current_pages.append(p_idx)
-            else:
-                current_doc_id = f"DOC_{p_idx+1}"
-                current_pages = [p_idx]
+            current_pages.append(p_idx)
+            if not current_doc_id and doc_id:
+                current_doc_id = doc_id
 
-    if current_doc_id is not None and current_pages:
+    if current_pages:
         groups.append((current_doc_id, current_pages))
 
     if not groups:
